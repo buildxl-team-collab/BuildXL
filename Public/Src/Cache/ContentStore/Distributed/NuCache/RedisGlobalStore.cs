@@ -643,6 +643,10 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
                     _role = roleResult.Value;
 
+                    return Result.Success(new CheckpointState(_role.Value, new EventSequencePoint(28974758), "checkpoints/28974758.604577bc-3006-46df-bfe6-89bd92600f6a.zip", DateTime.Now));
+                    //return Result.Success(new CheckpointState(_role.Value, new EventSequencePoint(DateTime.Parse("6/4/2019 7:12:57 PM")), "checkpoints/28974758.604577bc-3006-46df-bfe6-89bd92600f6a.zip", DateTime.Now));
+                    //return Result.Success(new CheckpointState(_role.Value, new EventSequencePoint(DateTime.UtcNow - TimeSpan.FromDays(1)), "checkpoints/28974758.604577bc-3006-46df-bfe6-89bd92600f6a.zip", DateTime.Now));
+
                     var maxCheckpoint = checkpoints.MaxByOrDefault(c => c.CheckpointCreationTime);
                     if (maxCheckpoint == null)
                     {

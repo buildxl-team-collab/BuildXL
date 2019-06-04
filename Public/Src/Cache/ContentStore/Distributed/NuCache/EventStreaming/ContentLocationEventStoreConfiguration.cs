@@ -85,17 +85,23 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache.EventStreaming
         public string EventHubConnectionString { get; }
 
         /// <nodoc />
-        public string ConsumerGroupName { get; }
+        public string ConsumerGroupName { get; set; }
 
         /// <summary>
         /// The max concurrency to use for events processing.
         /// </summary>
-        public int MaxEventProcessingConcurrency { get; set; } = 1;
+        public int MaxEventProcessingConcurrency { get; set; } = 8;
 
         /// <summary>
         /// The size of the queue used for concurrent event processing.
         /// </summary>
         public int EventProcessingMaxQueueSize { get; set; } = 100;
+
+        /// <summary>
+        /// The maximum sequence point to process. After it has been handled, we stop all processing of events and
+        /// return. Used only for performance benchmarking.
+        /// </summary>
+        public long? MaximumSequenceNumberToProcess { get; set; } = null;
 
         /// <summary>
         /// Creates another configuration instance with a given <paramref name="consumerGroupName"/>.

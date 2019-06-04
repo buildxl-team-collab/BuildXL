@@ -48,8 +48,14 @@ namespace Test.BuildXL.TestUtilities.XUnit.Extensions
             {
                 // Unset any synchronization restrictions set by the caller (looking at you, xunit)
                 SynchronizationContext.SetSynchronizationContext(null);
-                
-                return await base.RunTestCaseAsync(testCase).WithTimeoutAsync(TimeSpan.FromMinutes(5));
+
+                var testTimeout = TimeSpan.FromMinutes(5);
+                if (testCase.Timeout > 0)
+                {
+                    testTimeout = TimeSpan.FromMilliseconds(testCase.Timeout);
+                }
+
+                return await base.RunTestCaseAsync(testCase).WithTimeoutAsync(testTimeout);
             }
             catch (TimeoutException)
             {

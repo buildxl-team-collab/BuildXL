@@ -1981,15 +1981,12 @@ namespace ContentStoreTest.Distributed.Sessions
             string storageConnectionString = $"DefaultEndpointsProtocol=https;AccountName={storageAccountName};AccountKey={storageAccountKey}";
             var eventStoreConfiguration = new EventHubContentLocationEventStoreConfiguration(
                                               eventHubName: eventHubName,
-                                              eventHubConnectionString:
-                                              eventHubConnectionString,
+                                              eventHubConnectionString: eventHubConnectionString,
                                               consumerGroupName: "$Default",
                                               epoch: Guid.NewGuid().ToString())
             {
                 // Send events eagerly as they come in.
-                EventBatchSize = 1,
                 Epoch = null,
-                MaxEventProcessingConcurrency = 2,
             };
             CreateContentLocationStoreConfiguration = (testRootDirectory, index) =>
             {
@@ -2413,6 +2410,14 @@ namespace ContentStoreTest.Distributed.Sessions
 
             Output.WriteLine("[Statistics] TotalNumberOfCacheHit: " + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheHit].ToString());
             Output.WriteLine("[Statistics] TotalNumberOfCacheMiss: " + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheMiss].ToString());
+
+            var totalCacheRequests = counters[ContentLocationDatabaseCounters.TotalNumberOfCacheHit].Value + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheMiss].Value;
+            if  (totalCacheRequests > 0)
+            {
+                double cacheHitRate = ((double)counters[ContentLocationDatabaseCounters.TotalNumberOfCacheHit].Value) / ((double)totalCacheRequests);
+                Output.WriteLine("[Statistics] Cache Hit Rate: " + cacheHitRate.ToString());
+            }
+
             Output.WriteLine("[Statistics] CacheFlush: " + counters[ContentLocationDatabaseCounters.CacheFlush].ToString());
             Output.WriteLine("[Statistics] TotalNumberOfCacheFlushes: " + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheFlushes].ToString());
             Output.WriteLine("[Statistics] NumberOfCacheFlushesTriggeredByUpdates: " + counters[ContentLocationDatabaseCounters.NumberOfCacheFlushesTriggeredByUpdates].ToString());
@@ -2474,6 +2479,90 @@ namespace ContentStoreTest.Distributed.Sessions
             });
 
             return events;
+        }
+
+        //[Fact(Skip = "Manual use only")]
+        [Fact(Timeout=700000)]
+        public async Task MultiThreadedStressTestRocksDbContentLocationDatabaseOnRealWorkload()
+        {
+            var containerName = "checkpoints";
+            var checkpointsKey = "checkpoints-eventhub";
+            
+
+
+            if (!ConfigureRocksDbContentLocationBasedTestWithEventHub(
+                (index, testRootDirectory, config, storageConnectionString) =>
+                {
+                    config.EventStore.Epoch = "DM_S2CBPrefixReconcileTest.06042019.1";
+                    config.EventStore.NewEpochEventStartCursorDelay = TimeSpan.FromHours(4);
+                    ((EventHubContentLocationEventStoreConfiguration)config.EventStore).MaximumSequenceNumberToProcess = 28974758 + 100000;
+                    
+                    var role = index == 0 ? Role.Master : Role.Worker;
+                    config.Checkpoint = new CheckpointConfiguration(testRootDirectory)
+                    {
+                        CreateCheckpointInterval = TimeSpan.FromMinutes(1),
+                        RestoreCheckpointInterval = TimeSpan.FromMinutes(1),
+                        HeartbeatInterval = Timeout.InfiniteTimeSpan,
+                        Role = role,
+                    };
+
+                    config.CentralStore = new BlobCentralStoreConfiguration(
+                                              connectionString: storageConnectionString,
+                                              containerName: containerName,
+                                              checkpointsKey: checkpointsKey)
+                    {
+                        RetentionTime = TimeSpan.FromDays(365)
+                    };
+                }))
+            {
+                // Test is misconfigured.
+                Output.WriteLine("The test is skipped.");
+                return;
+            }
+
+            var stopWatch = new Stopwatch();
+            stopWatch.Start();
+            await RunTestAsync(
+                new Context(Logger),
+                1,
+                async context =>
+                {
+                    var runWatch = new Stopwatch();
+                    runWatch.Start();
+
+                    var runForMinutes = 5;
+                    var reportEverySeconds = 10;
+
+                    var eventStore = context.GetMaster().LocalLocationStore.EventStore as EventHubContentLocationEventStore;
+                    long? eventsProcessedTotal = 0;
+                    var lastSequenceNumber = eventStore.GetLastProcessedSequencePoint().SequenceNumber;
+                    for (var i = 0; i < (60 * runForMinutes)/ reportEverySeconds; ++i)
+                    {
+                        var runTs = stopWatch.Elapsed;
+                        var runElapsedTime = string.Format("{0:00}:{1:00}:{2:00}.{3:00}",
+                            runTs.Hours, runTs.Minutes, runTs.Seconds,
+                            runTs.Milliseconds / 10);
+
+                        var currentSequenceNumber = eventStore.GetLastProcessedSequencePoint().SequenceNumber;
+                        var eventsProcessedSinceLast = currentSequenceNumber - lastSequenceNumber;
+                        Output.WriteLine(runElapsedTime + " Events processed since last print: " + eventsProcessedSinceLast.ToString());
+                        lastSequenceNumber = currentSequenceNumber;
+                        eventsProcessedTotal += eventsProcessedSinceLast;
+
+                        PrintCacheStatistics(context);
+
+                        await Task.Delay(TimeSpan.FromSeconds(reportEverySeconds));
+                    }
+
+                    runWatch.Stop();
+                });
+            stopWatch.Stop();
+
+            var ts = stopWatch.Elapsed;
+            var elapsedTime = string.Format("{0:00}:{1:00}:{2:00}.{3:00}",
+                ts.Hours, ts.Minutes, ts.Seconds,
+                ts.Milliseconds / 10);
+            Output.WriteLine("Total time spent in benchmark: " + ts);
         }
     }
 }

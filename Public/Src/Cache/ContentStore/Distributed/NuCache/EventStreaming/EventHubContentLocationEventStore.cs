@@ -111,6 +111,8 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache.EventStreaming
             // Retry behavior in the Azure Event Hubs Client Library is controlled by the RetryPolicy property on the EventHubClient class.
             // The default policy retries with exponential backoff when Azure Event Hub returns a transient EventHubsException or an OperationCanceledException.
             _eventHubClient = EventHubClient.CreateFromConnectionString(connectionStringBuilder.ToString());
+
+            var info = await _eventHubClient.GetRuntimeInformationAsync();
             _partitionSender = _eventHubClient.CreatePartitionSender(PartitionId);
 
             return BoolResult.Success;
@@ -351,6 +353,11 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache.EventStreaming
                         }
 
                         _lastProcessedSequencePoint = new EventSequencePoint(message.SystemProperties.SequenceNumber);
+
+                        if (_lastProcessedSequencePoint.SequenceNumber >= _configuration.MaximumSequenceNumberToProcess)
+                        {
+                            DoSuspendProcessing(context).ThrowIfFailure();
+                        }
                     }
 
                     Counters.Append(counters);

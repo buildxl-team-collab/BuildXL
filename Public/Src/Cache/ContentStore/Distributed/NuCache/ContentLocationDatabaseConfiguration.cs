@@ -25,6 +25,11 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// <see cref="FlushDegreeOfParallelism"/>.
         /// </summary>
         public bool FlushSingleTransaction { get; set; } = true;
+
+        /// <summary>
+        /// Percentage of records to maintain in memory after flush
+        /// </summary>
+        public double FlushPreserveAtLeastInMemory = 0.5;
     }
 
     /// <summary>
@@ -52,7 +57,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// When activated, the requests effectively sent to the database will be initally done in memory and later on
         /// flushed to the underlying store.
         /// </summary>
-        public bool CacheEnabled { get; set; } = false;
+        public bool CacheEnabled { get; set; } = true;
 
         /// <summary>
         /// Controls behavior of the internal cache.
@@ -66,7 +71,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         ///
         /// Only useful when <see cref="CacheEnabled"/> is true.
         /// </summary>
-        public int CacheMaximumUpdatesPerFlush { get; set; } = 1000000;
+        public int CacheMaximumUpdatesPerFlush { get; set; } = 10_000_000;
 
         /// <summary>
         /// The maximum amount of time that can pass without a flush.

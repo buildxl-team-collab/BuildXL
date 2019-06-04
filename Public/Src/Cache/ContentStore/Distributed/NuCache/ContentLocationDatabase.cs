@@ -57,9 +57,6 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                     // acquired. However, this isn't required by our code right now; although it is a simple change.
                     _cache = new ConcurrentBigMap<ShortHash, ContentLocationEntry>();
                 }
-
-                // There should be no flushes ongoing, or we wouldn't have acquired the lock.
-                Contract.Assert(_flushingCache.Count == 0);
             }
         }
 
@@ -143,6 +140,13 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
                     actionBlock.Complete();
                     actionBlock.CompletionAsync().Wait();
+                }
+
+                int targetFlushingSize = (int)(_flushingCache.Count * _configuration.FlushPreserveAtLeastInMemory);
+                int removeAmount = _flushingCache.Count - targetFlushingSize;
+                foreach (var key in _flushingCache.Keys.Take(removeAmount))
+                {
+                    _flushingCache.RemoveKey(key);
                 }
 
                 using (_exchangeLock.AcquireWriteLock())
