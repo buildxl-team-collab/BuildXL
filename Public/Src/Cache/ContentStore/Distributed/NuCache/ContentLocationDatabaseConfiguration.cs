@@ -29,7 +29,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// <summary>
         /// Percentage of records to maintain in memory after flush
         /// </summary>
-        public double FlushPreserveAtLeastInMemory = 0.5;
+        public double FlushPreservePercentInMemory = 0;
     }
 
     /// <summary>
@@ -57,7 +57,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// When activated, the requests effectively sent to the database will be initally done in memory and later on
         /// flushed to the underlying store.
         /// </summary>
-        public bool CacheEnabled { get; set; } = true;
+        public bool CacheEnabled { get; set; } = false;
 
         /// <summary>
         /// Controls behavior of the internal cache.
@@ -69,9 +69,13 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// <summary>
         /// The maximum number of updates that we are willing to perform in memory before flushing.
         ///
+        /// Experiments show that cache hit rate under high load does not significantly increase when keeping much
+        /// more than the default number of entries, so its not recommended to change the setting without strong
+        /// leads.
+        /// 
         /// Only useful when <see cref="CacheEnabled"/> is true.
         /// </summary>
-        public int CacheMaximumUpdatesPerFlush { get; set; } = 10_000_000;
+        public int CacheMaximumUpdatesPerFlush { get; set; } = 5_000_000;
 
         /// <summary>
         /// The maximum amount of time that can pass without a flush.

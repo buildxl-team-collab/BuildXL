@@ -2408,22 +2408,25 @@ namespace ContentStoreTest.Distributed.Sessions
                 Output.WriteLine("CACHE DISABLED");
             }
 
+            Output.WriteLine("[Statistics] NumberOfStoreOperations: " + counters[ContentLocationDatabaseCounters.NumberOfStoreOperations].ToString());
+            Output.WriteLine("[Statistics] NumberOfGetOperations: " + counters[ContentLocationDatabaseCounters.NumberOfGetOperations].ToString());
             Output.WriteLine("[Statistics] TotalNumberOfCacheHit: " + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheHit].ToString());
             Output.WriteLine("[Statistics] TotalNumberOfCacheMiss: " + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheMiss].ToString());
-
             var totalCacheRequests = counters[ContentLocationDatabaseCounters.TotalNumberOfCacheHit].Value + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheMiss].Value;
-            if  (totalCacheRequests > 0)
+            if (totalCacheRequests > 0)
             {
                 double cacheHitRate = ((double)counters[ContentLocationDatabaseCounters.TotalNumberOfCacheHit].Value) / ((double)totalCacheRequests);
                 Output.WriteLine("[Statistics] Cache Hit Rate: " + cacheHitRate.ToString());
             }
 
-            Output.WriteLine("[Statistics] CacheFlush: " + counters[ContentLocationDatabaseCounters.CacheFlush].ToString());
+            Output.WriteLine("[Statistics] NumberOfPersistedEntries: " + counters[ContentLocationDatabaseCounters.NumberOfPersistedEntries].ToString());
             Output.WriteLine("[Statistics] TotalNumberOfCacheFlushes: " + counters[ContentLocationDatabaseCounters.TotalNumberOfCacheFlushes].ToString());
             Output.WriteLine("[Statistics] NumberOfCacheFlushesTriggeredByUpdates: " + counters[ContentLocationDatabaseCounters.NumberOfCacheFlushesTriggeredByUpdates].ToString());
             Output.WriteLine("[Statistics] NumberOfCacheFlushesTriggeredByTimer: " + counters[ContentLocationDatabaseCounters.NumberOfCacheFlushesTriggeredByTimer].ToString());
             Output.WriteLine("[Statistics] NumberOfCacheFlushesTriggeredByGarbageCollection: " + counters[ContentLocationDatabaseCounters.NumberOfCacheFlushesTriggeredByGarbageCollection].ToString());
             Output.WriteLine("[Statistics] NumberOfCacheFlushesTriggeredByCheckpoint: " + counters[ContentLocationDatabaseCounters.NumberOfCacheFlushesTriggeredByCheckpoint].ToString());
+
+            Output.WriteLine("[Statistics] CacheFlush: " + counters[ContentLocationDatabaseCounters.CacheFlush].ToString());
         }
 
         private static List<List<ContentLocationEventData>> GenerateUniquenessWorkload(int numberOfMachines, float cacheHitRatio, int maximumBatchSize, int operationsPerMachine, int? randomSeedOverride = null)
@@ -2487,7 +2490,6 @@ namespace ContentStoreTest.Distributed.Sessions
         {
             var containerName = "checkpoints";
             var checkpointsKey = "checkpoints-eventhub";
-            
 
 
             if (!ConfigureRocksDbContentLocationBasedTestWithEventHub(
@@ -2533,9 +2535,15 @@ namespace ContentStoreTest.Distributed.Sessions
                     var runForMinutes = 5;
                     var reportEverySeconds = 10;
 
+                    var db = context.GetMaster().LocalLocationStore.Database;
+                    var counters = db.Counters;
                     var eventStore = context.GetMaster().LocalLocationStore.EventStore as EventHubContentLocationEventStore;
+
+
                     long? eventsProcessedTotal = 0;
                     var lastSequenceNumber = eventStore.GetLastProcessedSequencePoint().SequenceNumber;
+                    long? lastNumberOfStoreOps = 0;
+                    long? lastNumberOfGetOps = 0;
                     for (var i = 0; i < (60 * runForMinutes)/ reportEverySeconds; ++i)
                     {
                         var runTs = stopWatch.Elapsed;
@@ -2550,6 +2558,21 @@ namespace ContentStoreTest.Distributed.Sessions
                         eventsProcessedTotal += eventsProcessedSinceLast;
 
                         PrintCacheStatistics(context);
+
+                        long? currentNumberOfGetOps = counters[ContentLocationDatabaseCounters.NumberOfGetOperations].Value;
+                        long? currentNumberOfStoreOps = counters[ContentLocationDatabaseCounters.NumberOfStoreOperations].Value;
+                        long? currentNumberOfPersistedEntries = counters[ContentLocationDatabaseCounters.NumberOfPersistedEntries].Value;
+
+                        double numberOfGetOpsPerSecond = (double)(currentNumberOfGetOps - lastNumberOfGetOps) / (reportEverySeconds * 60);
+                        Output.WriteLine("numberOfGetOpsPerSecond: " + numberOfGetOpsPerSecond.ToString());
+                        double numberOfStoreOpsPerSecond = (double)(currentNumberOfStoreOps - lastNumberOfStoreOps) / (reportEverySeconds * 60);
+                        Output.WriteLine("numberOfStoreOpsPerSecond: " + numberOfStoreOpsPerSecond.ToString());
+
+                        var timeDelta = counters[ContentLocationDatabaseCounters.CacheFlush].Duration.TotalSeconds;
+                        Output.WriteLine("numberOfPersistedEntriesPerSecond: " + (double)(currentNumberOfPersistedEntries) / timeDelta);
+
+                        lastNumberOfGetOps = currentNumberOfGetOps;
+                        lastNumberOfStoreOps = currentNumberOfStoreOps;
 
                         await Task.Delay(TimeSpan.FromSeconds(reportEverySeconds));
                     }

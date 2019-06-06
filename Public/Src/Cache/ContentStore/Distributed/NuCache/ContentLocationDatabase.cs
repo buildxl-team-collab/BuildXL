@@ -111,7 +111,8 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
             using (_database.Counters[ContentLocationDatabaseCounters.CacheFlush].Start())
             {
-                Contract.Assert(_flushingCache.Count == 0);
+                // The flushing cache may actually keep some entries now
+                //Contract.Assert(_flushingCache.Count == 0);
 
                 using (_exchangeLock.AcquireWriteLock())
                 {
@@ -142,17 +143,27 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                     actionBlock.CompletionAsync().Wait();
                 }
 
-                int targetFlushingSize = (int)(_flushingCache.Count * _configuration.FlushPreserveAtLeastInMemory);
-                int removeAmount = _flushingCache.Count - targetFlushingSize;
-                foreach (var key in _flushingCache.Keys.Take(removeAmount))
+                _database.Counters[ContentLocationDatabaseCounters.NumberOfPersistedEntries].Add(_flushingCache.Count);
+
+                if (_configuration.FlushPreservePercentInMemory > 0)
                 {
-                    _flushingCache.RemoveKey(key);
+                    int targetFlushingSize = (int)(_flushingCache.Count * _configuration.FlushPreservePercentInMemory);
+                    int removeAmount = _flushingCache.Count - targetFlushingSize;
+
+                    foreach (var key in _flushingCache.Keys.Take(removeAmount))
+                    {
+                        _flushingCache.RemoveKey(key);
+                    }
+                }
+                else
+                {
+                    using (_exchangeLock.AcquireWriteLock())
+                    {
+                        _flushingCache = new ConcurrentBigMap<ShortHash, ContentLocationEntry>();
+                    }
                 }
 
-                using (_exchangeLock.AcquireWriteLock())
-                {
-                    _flushingCache = new ConcurrentBigMap<ShortHash, ContentLocationEntry>();
-                }
+                _database.Counters[ContentLocationDatabaseCounters.TotalNumberOfCompletedCacheFlushes].Increment();
             }
         }
     }
@@ -594,6 +605,8 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// <nodoc />
         protected bool TryGetEntryCore(OperationContext context, ShortHash hash, out ContentLocationEntry entry)
         {
+            Counters[ContentLocationDatabaseCounters.NumberOfGetOperations].Increment();
+
             if (IsInMemoryCacheEnabled && _inMemoryCache.TryGetEntry(hash, out entry))
             {
                 return true;
@@ -617,6 +630,8 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// <nodoc />
         protected void Store(OperationContext context, ShortHash hash, ContentLocationEntry entry)
         {
+            Counters[ContentLocationDatabaseCounters.NumberOfStoreOperations].Increment();
+
             if (IsInMemoryCacheEnabled)
             {
                 _inMemoryCache.Store(context, hash, entry);
@@ -631,6 +646,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
             else
             {
                 Persist(context, hash, entry);
+                Counters[ContentLocationDatabaseCounters.NumberOfPersistedEntries].Increment();
             }
         }
 

@@ -90,7 +90,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache.EventStreaming
         /// <summary>
         /// The max concurrency to use for events processing.
         /// </summary>
-        public int MaxEventProcessingConcurrency { get; set; } = 8;
+        public int MaxEventProcessingConcurrency { get; set; } = 16;
 
         /// <summary>
         /// The size of the queue used for concurrent event processing.
