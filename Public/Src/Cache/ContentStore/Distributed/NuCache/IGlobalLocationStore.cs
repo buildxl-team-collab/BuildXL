@@ -8,6 +8,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Results;
 using BuildXL.Cache.ContentStore.Interfaces.Stores;
 using BuildXL.Cache.ContentStore.Tracing.Internal;
 using BuildXL.Cache.ContentStore.UtilitiesCore;
+using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Utilities.Tracing;
 
 namespace BuildXL.Cache.ContentStore.Distributed.NuCache
@@ -70,6 +71,15 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// Gets a value indicating whether the store supports storing and retrieving blobs.
         /// </summary>
         bool AreBlobsSupported { get; }
+
+        /// <todoc />
+        Task<Result<ContentHashListWithDeterminism?>> TryGetContentHashListAsync(OperationContext context, StrongFingerprint strongFingerprint);
+
+        /// <todoc />
+        Task<Result<ContentHashListWithDeterminism?>> AddOrGetContentHashListAsync(OperationContext context, StrongFingerprint strongFingerprint, ContentHashListWithDeterminism value, bool forceAdd = false);
+
+        /// <todoc />
+        Task<Result<IEnumerable<Selector>>> GetSelectorsAsync(OperationContext context, Fingerprint weakFingerprint);
 
         /// <nodoc />
         CounterSet GetCounters(OperationContext context);

@@ -140,6 +140,10 @@ namespace BuildXL.Cache.ContentStore.Distributed.Redis
         /// <nodoc />
         [CounterType(CounterType.Stopwatch)]
         ScanEntriesWithLastAccessTime,
+
+        /// <nodoc />
+        [CounterType(CounterType.Stopwatch)]
+        AddOrGetContentHashList,
     }
 
     /// <nodoc />

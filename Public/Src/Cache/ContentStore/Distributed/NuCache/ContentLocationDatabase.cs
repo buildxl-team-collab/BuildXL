@@ -15,6 +15,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Time;
 using BuildXL.Cache.ContentStore.Tracing;
 using BuildXL.Cache.ContentStore.Tracing.Internal;
 using BuildXL.Cache.ContentStore.Utils;
+using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Utilities;
 using BuildXL.Utilities.Collections;
 using BuildXL.Utilities.Tasks;
@@ -627,6 +628,15 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
             _nagleOperationTracer.Enqueue((hash, EntryOperation.Delete, reason, priorLocationCount));
             context.TraceDebug($"Deleted entry for hash {hash}. Creation Time: '{entry.CreationTimeUtc}', Last Access Time: '{entry.LastAccessTimeUtc}'");
         }
+
+        /// <todoc />
+        public abstract bool TryGetContentHashList(OperationContext context, StrongFingerprint strongFingerprint, out ContentHashListWithDeterminism value);
+
+        /// <todoc />
+        public abstract ContentHashListWithDeterminism? AddOrGetContentHashList(OperationContext context, StrongFingerprint strongFingerprint, ContentHashListWithDeterminism value, bool forceAdd = false);
+
+        /// <todoc />
+        public abstract Result<IReadOnlyCollection<Selector>> GetSelectors(OperationContext context, Fingerprint weakFingerprint);
 
         private object GetLock(ShortHash hash)
         {

@@ -21,6 +21,7 @@ using BuildXL.Cache.ContentStore.Tracing;
 using BuildXL.Cache.ContentStore.Tracing.Internal;
 using BuildXL.Cache.ContentStore.UtilitiesCore;
 using BuildXL.Cache.ContentStore.Utils;
+using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Utilities.Collections;
 using BuildXL.Utilities.Tasks;
 using BuildXL.Utilities.Tracing;
@@ -715,6 +716,84 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
             Contract.Assert(AreBlobsSupported, "GetBlobAsync was called and blobs are not supported.");
 
             return _blobAdapter.GetBlobAsync(context, hash);
+        }
+
+        /// <inheritdoc />
+        public Task<Result<ContentHashListWithDeterminism?>> TryGetContentHashListAsync(OperationContext context, StrongFingerprint strongFingerprint)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdoc />
+        public async Task<Result<ContentHashListWithDeterminism?>> AddOrGetContentHashListAsync(OperationContext context, StrongFingerprint strongFingerprint, ContentHashListWithDeterminism value, bool forceAdd = false)
+        {
+            var weakHashKey = GetKey(strongFingerprint.WeakFingerprint);
+            var strongKey = GetKey(strongFingerprint);
+            var fieldName = GetHashField(strongFingerprint);
+            var redisValue = GetRedisValue(value);
+            var now = _clock.UtcNow;
+
+            ContentHashListWithDeterminism? result = default;
+            var redisResult = await ExecuteRedisAsync(context, async redisDb =>
+            {
+                result = await redisDb.ExecuteBatchAsync(context, async batch =>
+                {
+                    // Get current value at key
+                    var getTask = batch.AddOperation(strongKey, b => b.StringGetAsync(strongKey));
+
+                    // Set if not exists
+                    var setTask = batch.AddOperation(strongKey, b => b.StringSetAsync(strongKey, redisValue, _configuration.LocationEntryExpiry, When.NotExists)).FireAndForgetAndReturnTask(context);
+                    batch.AddOperation(weakHashKey, b => b.HashSetAsync(weakHashKey, fieldName, now.ToUnixTimeSeconds())).FireAndForget(context);
+                    batch.AddOperation(weakHashKey, b => b.KeyExpireAsync(weakHashKey, _configuration.LocationEntryExpiry)).FireAndForget(context);
+
+                    bool updatedValue = await setTask;
+                    var retrievedValue = await getTask;
+
+                    return updatedValue ? null : FromRedisValue(retrievedValue);
+                },
+                RedisOperation.AddOrGetContentHashList);
+
+                return BoolResult.Success;
+            });
+
+            if (!redisResult)
+            {
+                return new Result<ContentHashListWithDeterminism?>(redisResult);
+            }
+
+            return new Result<ContentHashListWithDeterminism?>(result);
+        }
+
+        /// <inheritdoc />
+        public Task<Result<IEnumerable<Selector>>> GetSelectorsAsync(OperationContext context, Fingerprint weakFingerprint)
+        {
+            throw new NotImplementedException();
+        }
+
+        private RedisValue GetRedisValue(ContentHashListWithDeterminism value)
+        {
+            throw new NotImplementedException();
+        }
+
+        private ContentHashListWithDeterminism? FromRedisValue(RedisValue value)
+        {
+            throw new NotImplementedException();
+        }
+
+        private string GetHashField(StrongFingerprint strongFingerprint)
+        {
+            throw new NotImplementedException();
+        }
+
+        private string GetKey(StrongFingerprint strongFingerprint)
+        {
+            // TODO: Should this use Redis hash tag to ensure it goes to the same shard as weak fingerprint? (avoid talking to more than one shard?)
+            throw new NotImplementedException();
+        }
+
+        private string GetKey(Fingerprint weakFingerprint)
+        {
+            throw new NotImplementedException();
         }
     }
 }

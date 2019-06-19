@@ -15,10 +15,12 @@ using BuildXL.Cache.ContentStore.Interfaces.Time;
 using BuildXL.Cache.ContentStore.Interfaces.Tracing;
 using BuildXL.Cache.ContentStore.Interfaces.Utils;
 using BuildXL.Cache.ContentStore.Tracing.Internal;
+using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 using BuildXL.Engine.Cache;
 using BuildXL.Engine.Cache.KeyValueStores;
 using BuildXL.Native.IO;
 using BuildXL.Utilities;
+using BuildXL.Utilities.Collections;
 using BuildXL.Utilities.Tasks;
 using BuildXL.Utilities.Threading;
 using AbsolutePath = BuildXL.Cache.ContentStore.Interfaces.FileSystem.AbsolutePath;
@@ -38,6 +40,10 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         private string _storeLocation;
         private readonly string _activeSlotFilePath;
 
+        private readonly VolatileSet<StrongFingerprint> _recentlyValidatedStrongFingerprints;
+
+        private static readonly byte[] EmptyBytes = CollectionUtilities.EmptyArray<byte>();
+
         private enum StoreSlot
         {
             Slot1,
@@ -46,7 +52,10 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
         private enum Columns
         {
-            ClusterState
+            ClusterState,
+            Selectors,
+            HashFullFingerprintReverseIndex,
+            ContentHashLists
         }
 
         private enum ClusterStateKeys
@@ -326,7 +335,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                                     keyBuffer.Add(DeserializeKey(key));
                                     startValue = key;
 
-                                    if (keyBuffer.Count == KeysChunkSize )
+                                    if (keyBuffer.Count == KeysChunkSize)
                                     {
                                         cts.Cancel();
                                     }
@@ -338,7 +347,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                         }
 
                     }).ThrowOnError();
-                
+
                 if (keyBuffer.Count == 0)
                 {
                     break;
@@ -362,7 +371,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
             while (!token.IsCancellationRequested)
             {
                 keyBuffer.Clear();
-                
+
                 _keyValueStore.Use(
                     store =>
                     {
@@ -505,6 +514,164 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         private byte[] GetKey(ShortHash hash)
         {
             return hash.ToByteArray();
+        }
+
+        #region Memoization 
+        public override bool TryGetContentHashList(OperationContext context, StrongFingerprint strongFingerprint, out ContentHashListWithDeterminism value)
+        {
+            // TODO: Should content be validated on query? 
+            bool ensureContent = false;
+
+            var strongFingerprintKey = GetKey(strongFingerprint);
+
+            ContentHashListWithDeterminism? result = default;
+
+            _keyValueStore.Use(
+                store =>
+                {
+                    var strongFingerprintBytes = SerializeStrongFingerprint(strongFingerprint);
+                    if (store.TryGetValue(strongFingerprintKey, out var data, nameof(Columns.ContentHashLists)))
+                    {
+                        result = DeserializeContentHashList(data);
+                        var hashes = result?.ContentHashList.Hashes;
+                        if (ensureContent && !ValidateHashes(store, strongFingerprint, hashes))
+                        {
+                            // The content is not present. Don't return the result.
+                            result = default;
+                        }
+                    }
+
+                }).ThrowOnError();
+
+            value = result ?? default;
+            return result.HasValue;
+        }
+
+        private bool ValidateHashes(IBuildXLKeyValueStore store, StrongFingerprint strongFingerprint, IReadOnlyList<ContentHash> hashes)
+        {
+            if (_recentlyValidatedStrongFingerprints.Contains(strongFingerprint))
+            {
+                return true;
+            }
+
+            foreach (var hash in hashes)
+            {
+                if (!store.Contains(GetKey(hash)))
+                {
+                    return false;
+                }
+            }
+
+            _recentlyValidatedStrongFingerprints.Add(strongFingerprint, default /* TODO: Expiry */);
+            return true;
+        }
+
+        public override ContentHashListWithDeterminism? AddOrGetContentHashList(OperationContext context, StrongFingerprint strongFingerprint, ContentHashListWithDeterminism value, bool forceAdd = false)
+        {
+            ContentHashListWithDeterminism? result = default;
+            var key = GetKey(strongFingerprint);
+            _keyValueStore.Use(
+                store =>
+                {
+                    if (store.TryGetValue(key, out var existingValue, nameof(Columns.ContentHashLists)))
+                    {
+                        result = DeserializeContentHashList(existingValue);
+
+                        if (forceAdd)
+                        {
+                            var contentHashList = result?.ContentHashList;
+                            foreach (var contentHash in contentHashList.Hashes)
+                            {
+                                //store.RemoveBatch()
+                            }
+                        }
+                    }
+
+
+                    if (forceAdd || result == null)
+                    {
+                        var strongFingerprintBytes = SerializeStrongFingerprint(strongFingerprint);
+                        store.Put(key, SerializeContentHashList(value), nameof(Columns.ContentHashLists));
+                        store.Put(strongFingerprintBytes, EmptyBytes, nameof(Columns.Selectors));
+
+                        foreach (var contentHash in value.ContentHashList.Hashes)
+                        {
+                        }
+                    }
+                }).ThrowOnError();
+
+            return result;
+        }
+
+        public override Result<IReadOnlyCollection<Selector>> GetSelectors(OperationContext context, Fingerprint weakFingerprint)
+        {
+            return EnumerateSortedKeys(nameof(Columns.Selectors), keysChunkSize: 20, GetKey(weakFingerprint), deserializeKey:
+                GetSelector, CancellationToken.None).Where(s => s.HasValue).Select(s => s.Value);
+        }
+
+        // TODO: Volatile set with recently validated strong fingerprints
+
+        private Selector? GetSelector(IBuildXLKeyValueStore store, byte[] bytes)
+        {
+            var strongFingerprint = DeserializeStrongFingerprint(bytes);
+            if (store.TryGetValue(bytes, out var entryData))
+            {
+                var selectorData = DeserializeSelectorData(entryData);
+            }
+
+            var key = GetKey(strongFingerprint);
+            if (store.Contains(key, nameof(Columns.ContentHashLists)))
+            {
+                return strongFingerprint.Selector;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        private SelectorEntryData DeserializeSelectorData(byte[] bytes)
+        {
+            throw new NotImplementedException();
+        }
+
+        private StrongFingerprint DeserializeStrongFingerprint(byte[] bytes)
+        {
+            throw new NotImplementedException();
+        }
+
+        private byte[] SerializeStrongFingerprint(StrongFingerprint value)
+        {
+            throw new NotImplementedException();
+        }
+
+        private ContentHashListWithDeterminism DeserializeContentHashList(byte[] bytes)
+        {
+            throw new NotImplementedException();
+        }
+
+        private byte[] SerializeContentHashList(ContentHashListWithDeterminism value)
+        {
+            throw new NotImplementedException();
+        }
+
+        private byte[] GetKey(Fingerprint fingerprint)
+        {
+            throw new NotImplementedException();
+        }
+
+        private byte[] GetKey(StrongFingerprint strongFingerprint)
+        {
+            throw new NotImplementedException();
+        }
+
+        #endregion
+
+        private struct SelectorEntryData
+        {
+            public DateTime CreationTime { get; set; }
+            public DateTime LastAccessTime { get; set; }
+            public bool BypassContentHashListChecks { get; set; }
         }
 
         private class KeyValueStoreGuard : IDisposable

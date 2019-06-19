@@ -30,6 +30,8 @@ using BuildXL.Utilities.Collections;
 using BuildXL.Utilities.Tracing;
 using DateTimeUtilities = BuildXL.Cache.ContentStore.Utils.DateTimeUtilities;
 using static BuildXL.Cache.ContentStore.Utils.DateTimeUtilities;
+using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
+using BuildXL.Cache.MemoizationStore.Interfaces.Results;
 
 namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 {
@@ -1231,6 +1233,95 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         {
             return GlobalStore.GetBlobAsync(context, hash);
         }
+
+
+        #region Memoization Operations
+
+        public Task<Result<ContentHashListWithDeterminism?>> TryGetContentHashListAsync(OperationContext context, StrongFingerprint strongFingerprint)
+        {
+            return context.PerformOperationAsync(
+                Tracer,
+                () =>
+                {
+                    return MultiLevelGetContentHashListAsync(context, strongFingerprint, () => GlobalStore.TryGetContentHashListAsync(context, strongFingerprint));
+                });
+        }
+
+        public Task<Result<ContentHashListWithDeterminism?>> AddOrGetContentHashListAsync(OperationContext context, StrongFingerprint strongFingerprint, ContentHashListWithDeterminism value, bool forceAdd = false)
+        {
+            return context.PerformOperationAsync(
+                Tracer,
+                () =>
+                {
+                    return MultiLevelGetContentHashListAsync(context, strongFingerprint, async () =>
+                    {
+                        var result = await GlobalStore.AddOrGetContentHashListAsync(context, strongFingerprint, value).ThrowIfFailureAsync();
+                        if (!result.HasValue)
+                        {
+                            // Send message to central to add content hash list
+                        }
+
+                        return result;
+                    });
+                });
+        }
+
+        public async Task<Result<ContentHashListWithDeterminism?>> MultiLevelGetContentHashListAsync(
+            OperationContext context,
+            StrongFingerprint strongFingerprint,
+            Func<Task<Result<ContentHashListWithDeterminism?>>> globalGetContentHashListAsync)
+        {
+            if (Database.TryGetContentHashList(context, strongFingerprint, out var contentHashList))
+            {
+                // TODO: Log local result found
+                // TODO: Keep in db for slightly longer than expiry and pretend entry is missing if over expiry. That way we know that the touch will
+                // not race with entry deletion
+                // TODO: Touch content hash list?
+                return contentHashList;
+            }
+
+            return await globalGetContentHashListAsync();
+        }
+
+        public IAsyncEnumerable<GetSelectorResult> GetSelectorsAsync(OperationContext context, Fingerprint weakFingerprint)
+        {
+            var localSelectors = Database.GetSelectors(context, weakFingerprint);
+            return AsyncEnumerable.Concat(
+                From(localSelectors).ToAsyncEnumerable(),
+                AsyncEnumerableExtensions.CreateLazySingleProducerTaskAsyncEnumerable(() => GetGlobalOnlySelectors(context, weakFingerprint, localSelectors)).SelectMany(result => From(result).ToAsyncEnumerable()));
+
+            // TODO: Get remote selectors (filter out ones which are already returned by local database)
+            // TODO: Trace count of remote selectors which were redundant with local db vs not
+
+
+            throw new NotImplementedException();
+        }
+
+        private async Task<Result<IReadOnlyCollection<Selector>>> GetGlobalOnlySelectors(OperationContext context, Fingerprint weakFingerprint, Result<IReadOnlyCollection<Selector>> localSelectorResult)
+        {
+            var globalSelectorResult = await GlobalStore.GetSelectorsAsync(context, weakFingerprint);
+            if (!localSelectorResult.Succeeded)
+            {
+                return globalSelectorResult;
+            }
+        }
+
+        private IEnumerable<GetSelectorResult> From(Result<IReadOnlyCollection<Selector>> selectorResult)
+        {
+            if (!selectorResult.Succeeded)
+            {
+                yield return new GetSelectorResult(selectorResult);
+            }
+            else
+            {
+                foreach (var selector in selectorResult.Value)
+                {
+                    yield return new GetSelectorResult(selector);
+                }
+            }
+        }
+
+        #endregion Memoization Operations
 
         /// <summary>
         /// Adapts <see cref="LocalLocationStore"/> to interface needed for content locations (<see cref="DistributedCentralStorage.ILocationStore"/>) by
