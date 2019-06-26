@@ -112,6 +112,8 @@ param(
     [switch]$DoNotUseDefaultCacheConfigFilePath = $false,
 
     [switch]$UseL3Cache = $true,
+
+    [switch]$UseDistributedCache = $false,
 	
 	[Parameter(Mandatory=$false)]
 	[switch]$UseDedupStore = $false,
@@ -210,6 +212,7 @@ if ($env:BUILDXL_ADDITIONAL_DEFAULTS)
 
 $BuildXLExeName = "bxl.exe";
 $BuildXLRunnerExeName = "RunInSubst.exe";
+$CASaaSExeName = "ContentStoreApp.exe";
 
 if ($Analyze)
 {
@@ -275,18 +278,19 @@ function New-Deployment {
         enableServerMode = $enableServerMode;
         telemetryEnvironment = $TelemetryEnvironment;
         serverDeploymentDir = $serverDeploymentDir;
+        casaas = Join-Path $dir $CASaaSExeName;
     };
 }
 
 function Write-CacheConfigJson {
-    param([string]$ConfigPath, [bool]$UseSharedCache, [bool]$PublishToSharedCache, [bool]$UseL3Cache, [string]$VsoAccount, [string]$CacheNamespace);
+    param([string]$ConfigPath, [bool]$UseSharedCache, [bool]$PublishToSharedCache, [bool]$UseL3Cache, [bool]$UseDistributedCache, [string]$VsoAccount, [string]$CacheNamespace);
 
-    $configOptions = Get-CacheConfig -UseSharedCache $UseSharedCache -PublishToSharedCache $PublishToSharedCache -UseL3Cache $UseL3Cache -VsoAccount $VsoAccount -CacheNamespace $CacheNamespace;
+    $configOptions = Get-CacheConfig -UseSharedCache $UseSharedCache -PublishToSharedCache $PublishToSharedCache -UseL3Cache $UseL3Cache -UseDistributedCache $UseDistributedCache -VsoAccount $VsoAccount -CacheNamespace $CacheNamespace;
     Set-Content -Path $configPath -Value (ConvertTo-Json $configOptions)
 }
 
 function Get-CacheConfig {
-    param([bool]$UseSharedCache, [bool]$PublishToSharedCache, [bool]$UseL3Cache, [string]$VsoAccount, [string]$CacheNamespace);
+    param([bool]$UseSharedCache, [bool]$PublishToSharedCache, [bool]$UseL3Cache, [bool]$UseDistributedCache, [string]$VsoAccount, [string]$CacheNamespace);
     
     $localCache = @{
          Assembly = "BuildXL.Cache.MemoizationStoreAdapter";
@@ -304,7 +308,29 @@ function Get-CacheConfig {
         return $localCache;
     }
 
-    if ($UseL3Cache) {
+    if ($UseDistributedCache) {
+        $remoteCache = @{
+            Assembly = "BuildXL.Cache.BuildCacheAdapter";
+            Type = "BuildXL.Cache.BuildCacheAdapter.DistributedBuildCacheFactory";
+            CacheId = "DistributedCache";
+            CacheLogPath = "[BuildXLSelectedLogPath].dist.log";
+            CacheServiceFingerprintEndpoint = "https://$VsoAccount.artifacts.visualstudio.com/DefaultCollection";
+            CacheServiceContentEndpoint = "https://$VsoAccount.vsblob.visualstudio.com/DefaultCollection";
+            UseBlobContentHashLists = $true;
+            CacheKeyBumpTimeMins = 120;
+            CacheNamespace = $CacheNamespace;
+            CacheName = "DistributedCache";
+            ConnectionRetryCount = 5;
+            ConnectionRetryIntervalSeconds = 5;
+            GrpcPort = 7089;
+            SealUnbackedContentHashLists = $false;
+            ConnectionsPerSession = 46;
+            DisableContent = $true;
+        };
+
+        $localCache.Add("CacheName", "DistributedCache");
+        $localCache.Add("")
+    } elseif ($UseL3Cache) {
         $remoteCache = @{
             Assembly = "BuildXL.Cache.BuildCacheAdapter";
             Type = "BuildXL.Cache.BuildCacheAdapter.BuildCacheFactory";
@@ -337,6 +363,58 @@ function Get-CacheConfig {
         LocalCache = $localCache;
         RemoteCache = $remoteCache;
     };
+}
+
+function Write-CASaaSConfigJson {
+    param([string]$ConfigPath);
+
+    $configOptions = Get-CASaaSConfigJson;
+    Set-Content -Path $configPath -Value (ConvertTo-Json $configOptions)
+}
+
+function Get-CASaaSConfigJson {
+    $secretNamesMap = @{
+        RedisContentSecretName = "CloudStoreRedisConnectionString";
+        RedisMachineLocationsSecretName = "CloudStoreRedisConnectionString";
+    };
+
+    $connectionSecretNamesMap = @{};
+    $connectionSecretNamesMap.Add(".*", $secretNamesMap);
+
+    $distContSet = @{
+        IsDistributedContentEnabled = $true;
+        ConnectionSecretNamesMap = $connectionSecretNamesMap;
+        KeySpacePrefix = "PD";
+        ContentHashBumpTimeMinutes = 1500;
+        IsBandwidthCheckEnabled = $true;
+        IsDistributedEvictionEnabled = $true;
+        IsPinBetterEnabled = $true;
+        PinRisk = 1.0E-8;
+        FileRisk = 0.02;
+        MachineRisk = 0.08;
+        IsPinCachingEnabled = $true;
+        IsTouchEnabled = $true;
+        IsRepairHandlingEnabled = $true;
+        UseLegacyQuotaKeeperImplementation = $false;
+        IsContentLocationDatabaseEnabled = $false;
+        MaxEventProcessingConcurrency = 64;
+        UseIncrementalCheckpointing = $true;
+        UseDistributedCentralStorage = $true;
+        LocationEntryExpiryMinutes = 120;
+        IsReconciliationEnabled = $true;
+        UseMdmCounters = $true;
+        UseTrustedHash = $true;
+        TrustedHashFileSizeBoundary = 100000;
+        IsMachineReputationEnabled = $true;
+        ParallelHashingFileSizeBoundary = 52428801;
+        EmptyFileHashShortcutEnabled = $true;
+        BlobExpiryTimeMinutes = 30;
+        MaxBlobCapacity = 3221225472;
+        IsGrpcCopierEnabled = $true;
+        MaxConcurrentCopyOperations = 128
+    };
+
+    return $distContSet;
 }
 
 function Call-Subst {
@@ -451,11 +529,39 @@ Log " version of BuildXL.";
 $AdditionalBuildXLArguments += "/environment:$($useDeployment.telemetryEnvironment)";
 
 if (! $DoNotUseDefaultCacheConfigFilePath) {
-
     $cacheConfigPath = (Join-Path $cacheDirectory CacheCore.json);
-    Write-CacheConfigJson -ConfigPath $cacheConfigPath -UseSharedCache (!$disableSharedCache) -PublishToSharedCache $publishToSharedCache -UseL3Cache $UseL3Cache -VsoAccount $VsoAccount -CacheNamespace $CacheNamespace;
+    Write-CacheConfigJson -ConfigPath $cacheConfigPath -UseSharedCache (!$disableSharedCache) -PublishToSharedCache $publishToSharedCache -UseL3Cache $UseL3Cache -UseDistributedCache $UseDistributedCache -VsoAccount $VsoAccount -CacheNamespace $CacheNamespace;
 
     $AdditionalBuildXLArguments += "/cacheConfigFilePath:" + $cacheConfigPath;
+}
+
+if  ($UseDistributedCache) {
+    $ensureCasaasRunning = Start-Process -FilePath $useDeployment.casaas -ArgumentList "servicerunning" -NoNewWindow -PassThru;
+    $ensureCasaasRunning.WaitForExit(1000);
+    if ($ensureCasaasRunning.ExitCode -eq 1) {
+        Log-Emphasis "CASaaS not running; starting CASaaS...";
+
+        # Validate environment
+        if (!$env:CloudStoreRedisConnectionString)
+        {
+            throw "Requires Redis connection string in CloudStoreRedisConnectionString environment variable";
+        }
+    
+        if (!$env:VSTSPERSONALACCESSTOKEN) {
+            throw "Requires VSTS PAT to read metadata residing in AzDev blob storage";
+        }
+    
+        # Write DistributeContentSettings json
+        $casaasConfigPath = (Join-Path $cacheDirectory DistContSet.json);
+        Write-CASaaSConfigJson -ConfigPath $casaasConfigPath;
+    
+        # Start CASaaS instance
+        $casArgs = "distributedservice /dataRootPath:$cacheDirectory /grpcPort:7089 /cacheName:DistributedCache /cachePath:$cacheDirectory /ringId:TestDistRing1 /stampId:TestDistStamp1 /useDistributedGrpc:true /settingsPath:$casaasConfigPath  /logdirectorypath:$cacheDirectory\logs"
+        $p = Start-Process -FilePath $useDeployment.casaas -ArgumentList $casArgs -WorkingDirectory (pwd).Path -NoNewWindow -PassThru;
+    } else {
+        Log "CASaaS is running";
+    }
+
 }
 
 if ($useDeployment.EnableServerMode) {
