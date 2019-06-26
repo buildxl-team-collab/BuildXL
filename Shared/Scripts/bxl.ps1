@@ -536,7 +536,7 @@ if (! $DoNotUseDefaultCacheConfigFilePath) {
 }
 
 if  ($UseDistributedCache) {
-    $ensureCasaasRunning = Start-Process -FilePath $useDeployment.casaas -ArgumentList "servicerunning" -NoNewWindow -PassThru;
+    $ensureCasaasRunning = Start-Process -FilePath $useDeployment.casaas -ArgumentList "servicerunning" -NoNewWindow -PassThru -Wait;
     $ensureCasaasRunning.WaitForExit(1000);
     if ($ensureCasaasRunning.ExitCode -eq 1) {
         Log-Emphasis "CASaaS not running; starting CASaaS...";
