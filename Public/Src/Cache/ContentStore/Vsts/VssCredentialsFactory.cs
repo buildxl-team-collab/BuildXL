@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using System.Security;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Services.Common;
@@ -33,6 +34,18 @@ namespace BuildXL.Cache.ContentStore.Vsts
         public VssCredentialsFactory(VsoCredentialHelper helper)
         {
             _helper = helper;
+
+            var pat = Environment.GetEnvironmentVariable("VSTSPERSONALACCESSTOKEN");
+            if (!string.IsNullOrWhiteSpace(pat))
+            {
+                var secPat = new SecureString();
+                foreach (char c in pat)
+                {
+                    secPat.AppendChar(c);
+                }
+
+                _pat = secPat;
+            }
         }
 
         /// <summary>

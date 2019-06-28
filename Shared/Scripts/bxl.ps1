@@ -286,7 +286,7 @@ function Write-CacheConfigJson {
     param([string]$ConfigPath, [bool]$UseSharedCache, [bool]$PublishToSharedCache, [bool]$UseL3Cache, [bool]$UseDistributedCache, [string]$VsoAccount, [string]$CacheNamespace);
 
     $configOptions = Get-CacheConfig -UseSharedCache $UseSharedCache -PublishToSharedCache $PublishToSharedCache -UseL3Cache $UseL3Cache -UseDistributedCache $UseDistributedCache -VsoAccount $VsoAccount -CacheNamespace $CacheNamespace;
-    Set-Content -Path $configPath -Value (ConvertTo-Json $configOptions)
+    #Set-Content -Path $configPath -Value (ConvertTo-Json $configOptions)
 }
 
 function Get-CacheConfig {
@@ -309,28 +309,34 @@ function Get-CacheConfig {
     }
 
     if ($UseDistributedCache) {
-        $remoteCache = @{
-            Assembly = "BuildXL.Cache.BuildCacheAdapter";
-            Type = "BuildXL.Cache.BuildCacheAdapter.DistributedBuildCacheFactory";
-            CacheId = "DistributedCache";
-            CacheLogPath = "[BuildXLSelectedLogPath].dist.log";
-            CacheServiceFingerprintEndpoint = "https://$VsoAccount.artifacts.visualstudio.com/DefaultCollection";
-            CacheServiceContentEndpoint = "https://$VsoAccount.vsblob.visualstudio.com/DefaultCollection";
-            UseBlobContentHashLists = $true;
-            CacheKeyBumpTimeMins = 120;
-            CacheNamespace = $CacheNamespace;
-            CacheName = "DistributedCache";
-            ConnectionRetryCount = 5;
-            ConnectionRetryIntervalSeconds = 5;
-            GrpcPort = 7089;
-            SealUnbackedContentHashLists = $false;
-            ConnectionsPerSession = 46;
-            DisableContent = $true;
-        };
+        # $remoteCache = @{
+        #     Assembly = "BuildXL.Cache.BuildCacheAdapter";
+        #     Type = "BuildXL.Cache.BuildCacheAdapter.DistributedBuildCacheFactory";
+        #     CacheId = "DistributedCache";
+        #     CacheLogPath = "[BuildXLSelectedLogPath].dist.log";
+        #     CacheServiceFingerprintEndpoint = "https://$VsoAccount.artifacts.visualstudio.com/DefaultCollection";
+        #     CacheServiceContentEndpoint = "https://$VsoAccount.vsblob.visualstudio.com/DefaultCollection";
+        #     UseBlobContentHashLists = $true;
+        #     CacheKeyBumpTimeMins = 120;
+        #     CacheNamespace = $CacheNamespace;
+        #     CacheName = "DistributedCache";
+        #     ConnectionRetryCount = 5;
+        #     ConnectionRetryIntervalSeconds = 5;
+        #     GrpcPort = 7089;
+        #     SealUnbackedContentHashLists = $false;
+        #     ConnectionsPerSession = 46;
+        #     DisableContent = $true;
+        # };
 
+        $localCache.Add("EnableContentServer", $true);
+        $localCache.Add("EmptyFileHashShortcutEnabled", $false);
+        $localCache.Add("CheckLocalFiles", $false);
+        $localCache.Add("GrpcPort", 7089);
         $localCache.Add("CacheName", "DistributedCache");
-        $localCache.Add("")
-    } elseif ($UseL3Cache) {
+        $localCache.UseStreamCAS = $false;
+    }
+    
+    if ($UseL3Cache) {
         $remoteCache = @{
             Assembly = "BuildXL.Cache.BuildCacheAdapter";
             Type = "BuildXL.Cache.BuildCacheAdapter.BuildCacheFactory";
@@ -536,32 +542,32 @@ if (! $DoNotUseDefaultCacheConfigFilePath) {
 }
 
 if  ($UseDistributedCache) {
-    $ensureCasaasRunning = Start-Process -FilePath $useDeployment.casaas -ArgumentList "servicerunning" -NoNewWindow -PassThru -Wait;
-    $ensureCasaasRunning.WaitForExit(1000);
-    if ($ensureCasaasRunning.ExitCode -eq 1) {
-        Log-Emphasis "CASaaS not running; starting CASaaS...";
+    # $ensureCasaasRunning = Start-Process -FilePath $useDeployment.casaas -ArgumentList "servicerunning /scenario:" -NoNewWindow -PassThru -Wait;
+    # $ensureCasaasRunning.WaitForExit(1000);
+    # if ($ensureCasaasRunning.ExitCode -eq 1) {
+    #     Log-Emphasis "CASaaS not running; starting CASaaS...";
 
-        # Validate environment
-        if (!$env:CloudStoreRedisConnectionString)
-        {
-            throw "Requires Redis connection string in CloudStoreRedisConnectionString environment variable";
-        }
+    #     # Validate environment
+    #     if (!$env:CloudStoreRedisConnectionString)
+    #     {
+    #         throw "Requires Redis connection string in CloudStoreRedisConnectionString environment variable";
+    #     }
     
-        if (!$env:VSTSPERSONALACCESSTOKEN) {
-            throw "Requires VSTS PAT to read metadata residing in AzDev blob storage";
-        }
+    #     if (!$env:VSTSPERSONALACCESSTOKEN) {
+    #         throw "Requires VSTS PAT to read metadata residing in AzDev blob storage";
+    #     }
     
-        # Write DistributeContentSettings json
-        $casaasConfigPath = (Join-Path $cacheDirectory DistContSet.json);
-        Write-CASaaSConfigJson -ConfigPath $casaasConfigPath;
+    #     # Write DistributeContentSettings json
+    #     $casaasConfigPath = (Join-Path $cacheDirectory DistContSet.json);
+    #     Write-CASaaSConfigJson -ConfigPath $casaasConfigPath;
     
-        # Start CASaaS instance
-        $casArgs = "distributedservice /dataRootPath:$cacheDirectory /grpcPort:7089 /cacheName:DistributedCache /cachePath:$cacheDirectory /ringId:TestDistRing1 /stampId:TestDistStamp1 /useDistributedGrpc:true /settingsPath:$casaasConfigPath  /logdirectorypath:$cacheDirectory\logs"
-        $p = Start-Process -FilePath $useDeployment.casaas -ArgumentList $casArgs -WorkingDirectory (pwd).Path -NoNewWindow -PassThru;
-    } else {
-        Log "CASaaS is running";
-    }
-
+    #     # Start CASaaS instance
+    #     $casArgs = "distributedservice /dataRootPath:$cacheDirectory /grpcPort:7089 /cacheName:DistributedCache /cachePath:$cacheDirectory /ringId:TestDistRing1 /stampId:TestDistStamp1 /useDistributedGrpc:true /settingsPath:$casaasConfigPath  /logdirectorypath:$cacheDirectory\logs"
+    #     Log-Emphasis $casArgs;
+    #     $p = Start-Process -FilePath $useDeployment.casaas -ArgumentList $casArgs -WorkingDirectory (pwd).Path -NoNewWindow -PassThru;
+    # } else {
+    #     Log "CASaaS is running";
+    # }
 }
 
 if ($useDeployment.EnableServerMode) {

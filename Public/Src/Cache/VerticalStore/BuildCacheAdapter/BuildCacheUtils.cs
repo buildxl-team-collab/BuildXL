@@ -13,12 +13,11 @@ using BuildXL.Cache.ContentStore.Stores;
 using BuildXL.Cache.ContentStore.Vsts;
 using BuildXL.Cache.MemoizationStore.Vsts;
 using BuildXL.Storage;
-#if !PLATFORM_OSX
-using Microsoft.VisualStudio.Services.Content.Common.Authentication;
-#else
 using System.Net;
 using System.Security;
 using Microsoft.VisualStudio.Services.Common;
+#if !PLATFORM_OSX
+using Microsoft.VisualStudio.Services.Content.Common.Authentication;
 #endif
 
 namespace BuildXL.Cache.BuildCacheAdapter
@@ -48,26 +47,28 @@ namespace BuildXL.Cache.BuildCacheAdapter
                 logger.Debug("Using current user's credentials for obtaining AAD token");
             }
 
-            VssCredentialsFactory credentialsFactory;
+            VssCredentialsFactory credentialsFactory = null;
 
-#if !PLATFORM_OSX
-            credentialsFactory = new VssCredentialsFactory(new VsoCredentialHelper(s => logger.Debug(s)));
-#else
-            var secPat = new SecureString();
             if (!string.IsNullOrWhiteSpace(pat))
             {
+                var secPat = new SecureString();
                 foreach (char c in pat)
                 {
                     secPat.AppendChar(c);
                 }
-            }
-            else
-            {
-                throw new ArgumentException("PAT must be supplied when running with CoreCLR");
+
+                credentialsFactory = new VssCredentialsFactory(new VssBasicCredential(new NetworkCredential(string.Empty, secPat)));
             }
 
-            credentialsFactory = new VssCredentialsFactory(new VssBasicCredential(new NetworkCredential(string.Empty, secPat)));
+            if (credentialsFactory == null)
+            {
+#if !PLATFORM_OSX
+                credentialsFactory = new VssCredentialsFactory(new VsoCredentialHelper(s => logger.Debug(s)));
+#else
+                
+                throw new ArgumentException("PAT must be supplied when running with CoreCLR");
 #endif
+            }
 
             logger.Diagnostic("Creating BuildCacheCache factory");
             var fileSystem = new PassThroughFileSystem(logger);
