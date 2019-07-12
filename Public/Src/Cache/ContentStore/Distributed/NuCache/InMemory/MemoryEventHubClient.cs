@@ -3,36 +3,37 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Distributed.NuCache.EventStreaming;
 using BuildXL.Cache.ContentStore.Interfaces.Results;
+using BuildXL.Cache.ContentStore.Tracing;
 using BuildXL.Cache.ContentStore.Tracing.Internal;
+using BuildXL.Cache.ContentStore.Utils;
 using BuildXL.Utilities.Threading;
 using BuildXL.Utilities.Tracing;
+using Microsoft.Azure.EventHubs;
 
 namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 {
     /// <summary>
-    /// In-memory event store that is used for testing purposes.
+    /// An event hub client which interacts with a test in-process event hub service
     /// </summary>
-    public sealed class MemoryContentLocationEventStore : ContentLocationEventStore
+    public sealed class MemoryEventHubClient : StartupShutdownSlimBase, IEventHubClient
     {
         private readonly EventHub _hub;
         private bool _processing = false;
         private readonly ReadWriteLock _lock = ReadWriteLock.Create();
         private OperationContext _context;
-        private long _sequenceNumber;
+        private IPartitionReceiveHandler _receiver;
 
-        private readonly BlockingCollection<ContentLocationEventData> _queue = new BlockingCollection<ContentLocationEventData>();
+        private readonly BlockingCollection<EventData> _queue = new BlockingCollection<EventData>();
+
+        protected override Tracer Tracer { get; } = new Tracer(nameof(MemoryEventHubClient));
 
         /// <inheritdoc />
-        public MemoryContentLocationEventStore(
-            MemoryContentLocationEventStoreConfiguration configuration,
-            IContentLocationEventHandler handler,
-            CentralStorage centralStorage,
-            Interfaces.FileSystem.AbsolutePath workingDirectory)
-            : base(configuration, nameof(MemoryContentLocationEventStore), handler, centralStorage, workingDirectory)
+        public MemoryEventHubClient(MemoryContentLocationEventStoreConfiguration configuration)
         {
             _hub = configuration.Hub;
             _hub.OnEvent += HubOnEvent;
@@ -56,14 +57,13 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
             return base.ShutdownCoreAsync(context);
         }
 
-        private void HubOnEvent(ContentLocationEventData eventData)
+        private void HubOnEvent(EventData eventData)
         {
             using (_lock.AcquireReadLock())
             {
                 if (_processing)
                 {
                     DispatchAsync(_context, eventData).GetAwaiter().GetResult();
-                    Interlocked.Increment(ref _sequenceNumber);
                 }
                 else
                 {
@@ -74,13 +74,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         }
 
         /// <inheritdoc />
-        public override EventSequencePoint GetLastProcessedSequencePoint()
-        {
-            return new EventSequencePoint(_sequenceNumber);
-        }
-
-        /// <inheritdoc />
-        protected override BoolResult DoStartProcessing(OperationContext context, EventSequencePoint sequencePoint)
+        public BoolResult StartProcessing(OperationContext context, EventSequencePoint sequencePoint, IPartitionReceiveHandler processor)
         {
             using (_lock.AcquireWriteLock())
             {
@@ -89,7 +83,6 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                 while (_queue.TryTake(out var eventData))
                 {
                     DispatchAsync(context, eventData).GetAwaiter().GetResult();
-                    Interlocked.Increment(ref _sequenceNumber);
                 }
             }
 
@@ -97,27 +90,26 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         }
 
         /// <inheritdoc />
-        protected override BoolResult DoSuspendProcessing(OperationContext context)
+        public BoolResult SuspendProcessing(OperationContext context)
         {
             using (_lock.AcquireWriteLock())
             {
                 _processing = false;
             }
+
             return BoolResult.Success;
         }
 
         /// <inheritdoc />
-        protected override Task<BoolResult> SendEventsCoreAsync(
-            OperationContext context,
-            ContentLocationEventData[] events,
-            CounterCollection<ContentLocationEventStoreCounters> counters)
+        public Task SendAsync(OperationContext context, EventData eventData)
         {
-            foreach (var eventData in events)
-            {
-                _hub.Send(eventData);
-            }
-
+            _hub.Send(eventData);
             return BoolResult.SuccessTask;
+        }
+
+        public Task DispatchAsync(OperationContext context, EventData eventData)
+        {
+            return _receiver.ProcessEventsAsync(new[] { eventData });
         }
 
         /// <summary>
@@ -125,17 +117,25 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// </summary>
         public sealed class EventHub
         {
+            // EventData system property names (copied from event hub codebase)
+            public const string EnqueuedTimeUtcName = "x-opt-enqueued-time";
+            public const string SequenceNumberName = "x-opt-sequence-number";
+
+            private readonly PropertyInfo _systemPropertiesPropertyInfo = typeof(EventData).GetProperty(nameof(EventData.SystemProperties));
+
+            private long _sequenceNumber;
+
             private readonly object _syncLock = new object();
 
             /// <nodoc />
-            public event Action<ContentLocationEventData> OnEvent;
+            public event Action<EventData> OnEvent;
 
             /// <nodoc />
-            public void Send(ContentLocationEventData eventData)
+            public void Send(EventData eventData)
             {
                 lock (_syncLock)
                 {
-                    OnEvent(eventData);
+                    LockFreeSend(eventData);
                 }
             }
 
@@ -144,8 +144,15 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
             /// getting contention on <see cref="_syncLock"/>. Since it is not part of the usual implementation of
             /// EventHub and not clear it is required for correctness, it is removed here.
             /// </summary>
-            public void LockFreeSend(ContentLocationEventData eventData)
+            public void LockFreeSend(EventData eventData)
             {
+                // HACK: Use reflect to set system properties property since its internal
+                _systemPropertiesPropertyInfo.SetValue(eventData, Activator.CreateInstance(typeof(EventData.SystemPropertiesCollection)));
+
+                var sequenceNumber = Interlocked.Increment(ref _sequenceNumber);
+                eventData.SystemProperties[SequenceNumberName] = sequenceNumber;
+                eventData.SystemProperties[EnqueuedTimeUtcName] = DateTime.UtcNow;
+
                 OnEvent(eventData);
             }
         }
