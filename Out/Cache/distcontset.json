@@ -1,0 +1,48 @@
+{
+"IsDistributedContentEnabled": "true",
+"ConnectionSecretNamesMap": {
+".*": {
+"RedisContentSecretName": "CloudStoreRedisConnectionString",
+"RedisMachineLocationsSecretName": "CloudStoreRedisConnectionString"
+}
+},
+"KeySpacePrefix": "PD",
+"ContentHashBumpTimeMinutes": 1500,
+"IsBandwidthCheckEnabled": true,
+"IsDistributedEvictionEnabled": true,
+"IsPinBetterEnabled": true,
+"PinRisk": 1.0E-8,
+"FileRisk": 0.02,
+"MachineRisk": 0.08,
+"IsPinCachingEnabled": true,
+"IsTouchEnabled": true,
+"IsRepairHandlingEnabled": true,
+// Using QuotaKeeperV2
+"UseLegacyQuotaKeeperImplementation": false,
+/* Should remove this? */
+"PinRisk": null,
+"FileRisk": null,
+"MachineRisk": null,
+"IsPinCachingEnabled": false,
+"IsTouchEnabled": false,
+/* LLS-related [DM_S1|DM_S2] */
+"IsContentLocationDatabaseEnabled": false,
+"MaxEventProcessingConcurrency": 64,
+"UseIncrementalCheckpointing": true,
+"UseDistributedCentralStorage": true,
+"LocationEntryExpiryMinutes": 120,
+"IsReconciliationEnabled": true,
+"ContentLocationReadMode": "LocalLocationStore",
+"ContentLocationWriteMode": "Both",
+/* Telemetry */
+"UseMdmCounters": true,
+/* copy improvements */
+"UseTrustedHash": true,
+"TrustedHashFileSizeBoundary": 100000,
+"IsMachineReputationEnabled": true,
+"ParallelHashingFileSizeBoundary": 52428801,
+"EmptyFileHashShortcutEnabled": true,
+"BlobExpiryTimeMinutes": 30,
+"MaxBlobCapacity": 3221225472, // 3GB
+"IsGrpcCopierEnabled": true
+}

@@ -1,0 +1,42 @@
+{
+    "LocalCache": {
+        "CacheId": "SelfhostCS2L1",
+        "Assembly": "BuildXL.Cache.MemoizationStoreAdapter",
+        "CacheLogPath": "[BuildXLSelectedLogPath]",
+        "Type": "BuildXL.Cache.MemoizationStoreAdapter.MemoizationStoreCacheFactory",
+        "CacheRootPath": "D:/cache1",
+        "UseStreamCAS": false,
+        "EnableContentServer": true,
+        "EmptyFileHashShortcutEnabled": false,
+        "CheckLocalFiles": false,
+        "CacheName": "Cache1",
+        "GrpcPort": 7089
+    },
+    "RemoteCache": {
+        "Type": "BuildXL.Cache.BuildCacheAdapter.DistributedBuildCacheFactory",
+        "Assembly": "BuildXL.Cache.BuildCacheAdapter",
+
+        "CacheId": "Cache1",
+        "CacheLogPath": "[DominoSelectedLogPath].L3.log",
+        "CacheServiceFingerprintEndpoint": "https://artifactsu0.artifacts.visualstudio.com/DefaultCollection",
+        "CacheServiceContentEndpoint": "https://artifactsu0.vsblob.visualstudio.com/DefaultCollection",
+        "SealUnbackedContentHashLists": true,
+        "UseBlobContentHashLists": true,
+
+        "CacheKeyBumpTimeMins": 120,
+
+        "CacheNamespace": "TestMacNamespace116",
+
+        "CacheName": "Cache1",
+        "ConnectionRetryCount": 5,
+        "ConnectionRetryIntervalSeconds": 5,
+        "GrpcPort": 7089,
+        "SealUnbackedContentHashLists": false,
+        "ConnectionsPerSession": 46,
+        "DisableContent": true
+    },
+    "Type": "BuildXL.Cache.VerticalAggregator.VerticalCacheAggregatorFactory",
+    "Assembly": "BuildXL.Cache.VerticalAggregator",
+
+    "RemoteContentIsReadOnly": true
+}
