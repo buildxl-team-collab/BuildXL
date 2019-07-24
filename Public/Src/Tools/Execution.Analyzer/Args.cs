@@ -5,9 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.ContractsLight;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using BuildXL.Pips.Operations;
 using BuildXL.Storage;
 using BuildXL.ToolSupport;
 using BuildXL.Utilities;
@@ -141,9 +143,10 @@ namespace BuildXL.Execution.Analyzer
                 throw Error("Additional executionLog to compare parameter is required");
             }
 
-            // The fingerprint store based cache miss analyzer only uses graph information from the newer build,
-            // so skip loading the graph for the earlier build
-            if (m_mode.Value != AnalysisMode.CacheMiss)
+            // The fingerprint store based cache miss analyzer and the bxl invocation analyzer
+            // only use graph information from the newer build, so skip loading the graph for the earlier build
+            // TODO: To avoid large "||" statements, convert this to a list or enum or struct and check if the mode is "in" that data structure
+            if (m_mode.Value != AnalysisMode.CacheMiss || m_mode.Value != AnalysisMode.BXLInvocationXLG)
             {
                 if (!m_analysisInput.LoadCacheGraph(cachedGraphDirectory))
                 {
@@ -321,6 +324,12 @@ namespace BuildXL.Execution.Analyzer
                     break;
                 case AnalysisMode.CopyFile:
                     m_analyzer = InitializeCopyFilesAnalyzer();
+                    break;
+                case AnalysisMode.XlgToDb:
+                    m_analyzer = InitializeXLGToDBAnalyzer();
+                    break;
+                case AnalysisMode.BXLInvocationXLG:
+                    m_analyzer = InitializeBXLInvocationAnalyzer();
                     break;
                 default:
                     Contract.Assert(false, "Unhandled analysis mode");
@@ -594,6 +603,13 @@ namespace BuildXL.Execution.Analyzer
 
             writer.WriteLine("");
             WriteCopyFilesAnalyzerHelp(writer);
+
+            // TODO: Uncomment out help messages when analyzers are more polished.
+            //writer.WriteLine("");
+            //WriteXLGToDBHelp(writer);
+
+            //writer.WriteLine("");
+            //WriteDominoInvocationHelp(writer);
         }
 
         public void LogEventSummary()
@@ -603,8 +619,13 @@ namespace BuildXL.Execution.Analyzer
 
         public long ParseSemistableHash(Option opt)
         {
-            var adjustedOption = new Option() { Name = opt.Name, Value = opt.Value.ToUpper().Replace("PIP", "") };
-            return Convert.ToInt64(ParseStringOption(adjustedOption), 16);
+            var adjustedOption = new Option() { Name = opt.Name, Value = opt.Value.ToUpper().Replace(Pip.SemiStableHashPrefix.ToUpper(), "") };
+            if (!Int64.TryParse(ParseStringOption(adjustedOption), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out long sshValue) || sshValue == 0)
+            {
+                throw Error("Invalid pip: {0}. Id must be a semistable hash that starts with Pip i.e.: PipC623BCE303738C69", opt.Value);
+            }
+
+            return sshValue;
         }
     }
 
