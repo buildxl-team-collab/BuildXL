@@ -44,5 +44,6 @@
 "EmptyFileHashShortcutEnabled": true,
 "BlobExpiryTimeMinutes": 30,
 "MaxBlobCapacity": 3221225472, // 3GB
-"IsGrpcCopierEnabled": true
+"IsGrpcCopierEnabled": true,
+"RetryIntervalForCopiesMs": [ 20 ]
 }

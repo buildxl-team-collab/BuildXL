@@ -66,10 +66,19 @@ namespace BuildXL.Cache.ContentStore.App
                     grpcPort = Helpers.GetGrpcPortFromFile(_logger, grpcPortFileName);
                 }
 
+                var context = new Interfaces.Tracing.Context(_logger);
+                var innerCancellationTokenSource = new CancellationTokenSource();
+
+                _cancellationToken.Register(() =>
+                {
+                    RemoveFromTrackerInternal(context, (uint)grpcPort);
+                    innerCancellationTokenSource.Cancel();
+                });
+
                 var arguments = CreateDistributedCacheServiceArguments(
                     copier: useDistributedGrpc
                         ? new GrpcFileCopier(
-                            context: new Interfaces.Tracing.Context(_logger),
+                            context: context,
                             grpcPort: grpcPort,
                             maxGrpcClientCount: dcs.MaxGrpcClientCount,
                             maxGrpcClientAgeMinutes: dcs.MaxGrpcClientAgeMinutes,
@@ -85,7 +94,7 @@ namespace BuildXL.Cache.ContentStore.App
                     grpcPort: (uint)grpcPort,
                     maxSizeQuotaMB: maxSizeQuotaMB,
                     dataRootPath: dataRootPath,
-                    ct: _cancellationToken,
+                    ct: innerCancellationTokenSource.Token,
                     bufferSizeForGrpcCopies: bufferSizeForGrpcCopies,
                     gzipBarrierSizeForGrpcCopies: gzipBarrierSizeForGrpcCopies);
 

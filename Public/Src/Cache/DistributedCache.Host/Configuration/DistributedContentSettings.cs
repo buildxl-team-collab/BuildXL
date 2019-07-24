@@ -58,6 +58,24 @@ namespace BuildXL.Cache.Host.Configuration
             ConnectionSecretNameMap = connectionSecretNameMap;
         }
 
+        private static IReadOnlyList<int> DefaultRetryIntervalForCopiesMs =
+            new List<int>()
+            {
+                // retry the first 2 times quickly.
+                20,
+                200,
+
+                // then back-off exponentially.
+                1000,
+                5000,
+                10000,
+                30000,
+
+                // Borrowed from Empirical CacheV2 determined to be appropriate for general remote server restarts.
+                60000,
+                120000,
+            };
+
         /// <summary>
         /// Feature flag to turn on distributed content tracking (L2/datacenter cache).
         /// </summary>
@@ -181,25 +199,9 @@ namespace BuildXL.Cache.Host.Configuration
         /// Delays for retries for file copies
         /// </summary>
         [DataMember]
-        public IReadOnlyList<int> RetryIntervalForCopiesMs { get; set; } =
-            new List<int>()
-            {
-                // retry the first 2 times quickly.
-                20,
-                200,
+        public IReadOnlyList<int> RetryIntervalForCopiesMs { get; set; }
 
-                // then back-off exponentially.
-                1000,
-                5000,
-                10000,
-                30000,
-
-                // Borrowed from Empirical CacheV2 determined to be appropriate for general remote server restarts.
-                60000,
-                120000,
-            };
-
-        public IReadOnlyList<TimeSpan> RetryIntervalForCopies => RetryIntervalForCopiesMs.Select(ms => TimeSpan.FromMilliseconds(ms)).ToList();
+        public IReadOnlyList<TimeSpan> RetryIntervalForCopies => (RetryIntervalForCopiesMs ?? DefaultRetryIntervalForCopiesMs).Select(ms => TimeSpan.FromMilliseconds(ms)).ToList();
 
         #region Grpc Copier
         /// <summary>

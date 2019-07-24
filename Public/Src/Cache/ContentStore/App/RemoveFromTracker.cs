@@ -25,6 +25,12 @@ namespace BuildXL.Cache.ContentStore.App
             Initialize();
 
             var context = new Context(_logger);
+
+            RemoveFromTrackerInternal(context, grpcPort);
+        }
+
+        internal void RemoveFromTrackerInternal(Context context, uint grpcPort)
+        {
             var retryPolicy = new RetryPolicy(
                 new TransientErrorDetectionStrategy(),
                 new FixedInterval("RetryInterval", (int)_retryCount, TimeSpan.FromSeconds(_retryIntervalSeconds), false));
