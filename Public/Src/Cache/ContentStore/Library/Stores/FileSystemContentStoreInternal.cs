@@ -897,10 +897,10 @@ namespace BuildXL.Cache.ContentStore.Stores
             // Fast path:
             // If hardlinking existing content which has already been pinned in this context
             // just quickly attempt to hardlink from and existing replica
-            if (shouldAttemptHardLink
+            if (_settings.UseRedundantPutFileShortcut 
+                && shouldAttemptHardLink
                 && ContentDirectory.TryGetFileInfo(contentHash, out var fileInfo)
-                && IsPinned(contentHash, pinRequest)
-                && _settings.UseRedundantPutFileShortcut)
+                && IsPinned(contentHash, pinRequest))
             {
                 using (_counters[Counter.PutFileFast].Start())
                 {

@@ -141,6 +141,11 @@ namespace BuildXL.Cache.ContentStore.Distributed.Stores
         public bool EnableProactiveCopy { get; set; } = false;
 
         /// <summary>
+        /// The maximum amount of time to wait for a build session to complete
+        /// </summary>
+        public TimeSpan MaxRepairWaitForBuildSessionTime { get; set; }
+
+        /// <summary>
         /// Maximum number of locations which should trigger a proactive copy.
         /// </summary>
         public int ProactiveCopyLocationsThreshold { get; set; } = 1;

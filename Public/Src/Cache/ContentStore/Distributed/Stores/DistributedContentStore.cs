@@ -433,6 +433,13 @@ namespace BuildXL.Cache.ContentStore.Distributed.Stores
         /// </summary>
         public async Task<StructResult<long>> RemoveFromTrackerAsync(Context context)
         {
+            if (_settings.MaxRepairWaitForBuildSessionTime != default(TimeSpan)
+                && _contentLocationStore is TransitioningContentLocationStore tcs)
+            {
+                
+
+            }
+
             if (_enableRepairHandling && InnerContentStore is ILocalContentStore localStore)
             {
                 var result = await _contentLocationStore.InvalidateLocalMachineAsync(context, localStore, CancellationToken.None);
