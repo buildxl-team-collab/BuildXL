@@ -19,7 +19,6 @@ namespace Library {
             Interfaces.dll,
             
             importFrom("BuildXL.Cache.DistributedCache.Host").Configuration.dll,
-            importFrom("BuildXL.Cache.DistributedCache.Host").Service.dll,
             importFrom("BuildXL.Utilities").dll,
 
             importFrom("System.Data.SQLite.Core").pkg,

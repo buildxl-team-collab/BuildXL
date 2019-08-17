@@ -12,6 +12,7 @@ using BuildXL.Cache.ContentStore.Interfaces.Stores;
 using BuildXL.Cache.ContentStore.Service;
 using BuildXL.Cache.ContentStore.Stores;
 using BuildXL.Cache.Host.Configuration;
+using BuildXL.Cache.MemoizationStore.Service;
 
 namespace BuildXL.Cache.Host.Service.Internal
 {
@@ -46,6 +47,7 @@ namespace BuildXL.Cache.Host.Service.Internal
             {
                 serviceConfiguration = CreateServiceConfiguration(_logger, _fileSystem, cacheConfig.LocalCasSettings, dataRootPath, isDistributed: false);
                 var localContentServerConfiguration = CreateLocalContentServerConfiguration(cacheConfig.LocalCasSettings.ServiceSettings, serviceConfiguration);
+
                 return new LocalContentServer(
                     _fileSystem,
                     _logger,

@@ -10,6 +10,8 @@ namespace Service {
         skipDocumentationGeneration: true,
         references: [
             Configuration.dll,
+            importFrom("BuildXL.Cache.MemoizationStore").Library.dll,
+            importFrom("BuildXL.Cache.MemoizationStore").Distributed.dll,
             importFrom("BuildXL.Cache.ContentStore").Library.dll,
             importFrom("BuildXL.Cache.ContentStore").Distributed.dll,
             importFrom("BuildXL.Cache.ContentStore").Interfaces.dll,
