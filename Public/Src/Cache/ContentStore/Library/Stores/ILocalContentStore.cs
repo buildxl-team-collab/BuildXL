@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,6 +26,11 @@ namespace BuildXL.Cache.ContentStore.Stores
         /// Gets whether the local content store contains the content specified by the hash
         /// </summary>
         bool Contains(ContentHash hash);
+
+        /// <summary>
+        /// Updates the last access time for a piece of content
+        /// </summary>
+        public Task UpdateContentWithLastAccessTimeAsync(ContentHash contentHash, DateTime lru);
     }
 
     /// <summary>
