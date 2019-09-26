@@ -1134,6 +1134,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                         {
                             // Use the latest last access time between LLS and local last access time
                             DateTime distributedLastAccessTime = entry.LastAccessTimeUtc.ToDateTime();
+                            lastAccessTime = distributedLastAccessTime > lastAccessTime ? distributedLastAccessTime : lastAccessTime;
 
                             // TODO[LLS]: Maybe some machines should be primary replicas for the content and not prioritize deletion (bug 1365340)
                             // just because there are many replicas
