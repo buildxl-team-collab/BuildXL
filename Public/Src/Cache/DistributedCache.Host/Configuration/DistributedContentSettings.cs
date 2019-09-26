@@ -216,7 +216,7 @@ namespace BuildXL.Cache.Host.Configuration
         /// may be kept in memory at any time.
         /// </remarks>
         [DataMember]
-        public int MaximumEvictionPoolMultiplier { get; set; } = 30;
+        public int MaximumEvictionPoolMultiplier { get; set; } = 2;
 
         private int[] _retryIntervalForCopiesMs =
             new int[]

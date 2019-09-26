@@ -90,7 +90,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.Redis
         /// When running eviction, up to <see cref="EvictionWindowSize"/> * <see cref="MaximumEvictionPoolMultiplier"/>
         /// may be kept in memory at any time.
         /// </remarks>
-        public int MaximumEvictionPoolMultiplier { get; set; } = 30;
+        public int MaximumEvictionPoolMultiplier { get; set; } = 2;
 
         /// <summary>
         /// Returns true if Redis can be used for storing small files.
