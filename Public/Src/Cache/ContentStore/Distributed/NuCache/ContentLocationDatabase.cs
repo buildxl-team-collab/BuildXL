@@ -283,9 +283,14 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                 }
             }
 
+            
             using (var cancellableContext = TrackShutdown(context))
             {
-                DoGarbageCollect(cancellableContext);
+                context.PerformOperation(Tracer, () =>
+                {
+                    DoGarbageCollect(cancellableContext);
+                    return BoolResult.Success;
+                }).IgnoreFailure();
             }
 
             lock (this)
@@ -372,8 +377,11 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
                 Counters[ContentLocationDatabaseCounters.TotalNumberOfScannedEntries].Add(uniqueContentCount);
 
+                var lastHashString = lastHash?.ToString() ?? "NotStarted";
+
                 Tracer.Debug(context, $"Overall DB Stats: UniqueContentCount={uniqueContentCount}, UniqueContentSize={uniqueContentSize}, "
-                    + $"TotalContentCount={totalContentCount}, TotalContentSize={totalContentSize}, MaxHashFirstByteDifference={maxHashFirstByteDifference}");
+                    + $"TotalContentCount={totalContentCount}, TotalContentSize={totalContentSize}," 
+                    + $" MaxHashFirstByteDifference={maxHashFirstByteDifference}, LastHash={lastHashString}, IsCancelled={context.Token.IsCancellationRequested}");
 
                 Tracer.GarbageCollectionFinished(
                     context,
@@ -549,6 +557,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
             ForceCacheFlushAsync(context).GetAwaiter().GetResult();
         }
 
+        // TODO: Track OperationReason/EntryOperation at event hub batch level
         private ContentLocationEntry SetMachineExistenceAndUpdateDatabase(OperationContext context, ShortHash hash, MachineId? machine, bool existsOnMachine, long size, UnixTime? lastAccessTime, bool reconciling)
         {
             var created = false;
@@ -629,7 +638,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         private void LogEntryDeletion(OperationContext context, ShortHash hash, ContentLocationEntry entry, OperationReason reason, int priorLocationCount)
         {
             _nagleOperationTracer.Enqueue((hash, EntryOperation.Delete, reason, priorLocationCount));
-            context.TraceDebug($"Deleted entry for hash {hash}. Creation Time: '{entry.CreationTimeUtc}', Last Access Time: '{entry.LastAccessTimeUtc}'");
+            context.TraceDebug($"Deleted entry for hash {hash} (Size={entry.ContentSize}). Creation Time: '{entry.CreationTimeUtc}', Last Access Time: '{entry.LastAccessTimeUtc}'");
         }
 
         /// <summary>

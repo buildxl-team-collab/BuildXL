@@ -242,8 +242,10 @@ namespace BuildXL.Cache.ContentStore.Distributed.Stores
             badContentLocations.Clear();
             string lastErrorMessage = null;
 
+            int replicaNumber = 0;
             foreach (MachineLocation location in hashInfo.Locations)
             {
+                replicaNumber++;
                 // if the file is explicitly reported missing by the remote, don't bother retrying.
                 if (missingContentLocations.Contains(location))
                 {
@@ -295,6 +297,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.Stores
                                 $"contentHash=[{hashInfo.ContentHash.ToShortString()}] " +
                                 $"from=[{sourcePath}] " +
                                 $"size=[{result.Size ?? hashInfo.Size}] " +
+                                $"replica=[{replicaNumber} of {hashInfo.Locations} ({missingContentLocations.Count} missing)] " +
                                 $"trusted={_settings.UseTrustedHash} " +
                                 (result.TimeSpentHashing.HasValue ? $"timeSpentHashing={result.TimeSpentHashing.Value.TotalMilliseconds}ms " : string.Empty) +
                                 $"IOGate.OccupiedCount={_settings.MaxConcurrentCopyOperations - _ioGate.CurrentCount} " +

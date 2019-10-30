@@ -28,6 +28,8 @@ namespace BuildXL.Storage
         /// </summary>
         public readonly ContentHash Hash;
 
+        public bool IsValid => m_lengthAndExistence.SerializedValue != 0;
+
         /// <summary>
         /// Encapsulates file length and existence. Neither of the values is required.
         /// </summary>

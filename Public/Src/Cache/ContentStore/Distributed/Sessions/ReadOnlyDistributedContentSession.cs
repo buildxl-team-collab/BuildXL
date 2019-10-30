@@ -813,9 +813,8 @@ namespace BuildXL.Cache.ContentStore.Distributed.Sessions
 
             // Calculate the minimum number of remote verified and unverified copies for us to
             // return a successful pin at the given risk level.
-            ComputePinThresholds(remote, _settings.PinConfiguration.PinRisk, out var minVerifiedCount, out var minUnverifiedCount, out var pinCacheTimeToLive);
-            Contract.Assert(minVerifiedCount > 0);
-            Contract.Assert(minUnverifiedCount >= minVerifiedCount);
+            _settings.PinConfiguration.ComputePinThresholds(minVerifiedCount: out var minVerifiedCount, minUnverifiedCount: out var minUnverifiedCount);
+            ComputePinThresholds(remote, out var pinCacheTimeToLive);
 
             // If we enough records, we are satisfied without further action.
             if (locations.Count >= minUnverifiedCount)
@@ -885,34 +884,11 @@ namespace BuildXL.Cache.ContentStore.Distributed.Sessions
                 return PinResult.ContentNotFound;
             }
         }
-
-        // Compute the minimum number of records for us to proceed with a pin with and without record verification.
-        // In this implementation, there are two risks: the machineRisk that a machine cannot be contacted when the file is needed (e.g. network error or service reboot), and
-        // the fileRisk that the file is not actually present on the machine despite the record (e.g. the file has been deleted or the machine re-imaged). The second risk
-        // can be mitigated by verifying that the files actually exist, but the first cannot. The verifiedRisk of not getting the file from a verified location is thus equal to
-        // the machineRisk, while the unverfiedRisk of not getting a file from an unverified location is larger. Given n machines each with risk q, the risk Q of not getting
-        // the file from any of them is Q = q^n. Solving for n to get the number of machines required to achieve a given overall risk tolerance gives n = ln Q / ln q.
-        // In this way we can compute the minimum number of verified and unverified records to return a successful pin.
-        // Future refinements of this method could use machine reputation and file lifetime knowledge to improve this model.
-        private void ComputePinThresholds(ContentHashWithSizeAndLocations remote, double risk, out int minVerifiedCount, out int minUnverifiedCount, out TimeSpan pinCacheTimeToLive)
+ 
+        private void ComputePinThresholds(ContentHashWithSizeAndLocations remote, out TimeSpan pinCacheTimeToLive)
         {
             Contract.Assert(_settings.PinConfiguration != null);
             Contract.Assert(remote != null);
-            Contract.Assert((risk > 0.0) && (risk < 1.0));
-
-            double verifiedRisk = _settings.PinConfiguration.MachineRisk;
-            double unverifiedRisk = _settings.PinConfiguration.MachineRisk + (_settings.PinConfiguration.FileRisk * (1.0 - _settings.PinConfiguration.MachineRisk));
-
-            Contract.Assert((verifiedRisk > 0.0) && (verifiedRisk < 1.0));
-            Contract.Assert((unverifiedRisk > 0.0) && (unverifiedRisk < 1.0));
-            Contract.Assert(unverifiedRisk >= verifiedRisk);
-
-            double lnRisk = Math.Log(risk);
-            double lnVerifiedRisk = Math.Log(verifiedRisk);
-            double lnUnverifiedRisk = Math.Log(unverifiedRisk);
-
-            minVerifiedCount = (int)Math.Ceiling(lnRisk / lnVerifiedRisk);
-            minUnverifiedCount = (int)Math.Ceiling(lnRisk / lnUnverifiedRisk);
 
             if (_pinCache == null || _settings.PinConfiguration.PinCacheReplicaCreditRetentionMinutes <= 0)
             {

@@ -217,6 +217,8 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache.EventStreaming
         private async Task ProcessEventsAsync(OperationContext context, List<EventData> messages)
         {
             // Creating nested context for all the processing operations.
+            // TODO: Maybe add a method to context creation which tracks certain detailed info.
+            //       Pass it a set of interfaces and it will generate a type to track those details
             context = context.CreateNested();
             string asyncProcessing = _eventProcessingBlocks != null ? "on" : "off";
             Tracer.Info(context, $"{Tracer.Name}: Received {messages.Count} events from Event Hub. Async processing is '{asyncProcessing}'.");

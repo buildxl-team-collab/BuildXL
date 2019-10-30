@@ -21,10 +21,10 @@ namespace UM {
     @@public
     export const standardLibs: File[] = [
         ...addIfLazy(isWin, () => [
-            lib.getFile(r`kernel32.lib`),
-            lib.getFile(r`advapi32.lib`),
-            lib.getFile(r`uuid.lib`),
-            lib.getFile(r`ntdll.lib`)
+            // lib.getFile(r`kernel32.lib`),
+            // lib.getFile(r`advapi32.lib`),
+            // lib.getFile(r`uuid.lib`),
+            // lib.getFile(r`ntdll.lib`)
         ])
     ];
 }
@@ -53,7 +53,7 @@ function getHeadersAndLibs() : StaticDirectory {
     const windowsH = f`${installedSdkLocation}/Include/${version}/um/Windows.h`;
     if (!File.exists(windowsH))
     {
-        Contract.fail(`Could not find the installed windows Sdk headers for version ${version}. File '${windowsH.toDiagnosticString()}' does not exist. Please install version ${version} from https://developer.microsoft.com/en-us/windows/downloads/sdk-archive. You don't need the full Sdk just the following features: 'Windows SDK for Desktop C++ x86 Apps', 'Windows SDK for Desktop C++ amd64 Apps' and its dependencies.`);
+        //Contract.fail(`Could not find the installed windows Sdk headers for version ${version}. File '${windowsH.toDiagnosticString()}' does not exist. Please install version ${version} from https://developer.microsoft.com/en-us/windows/downloads/sdk-archive. You don't need the full Sdk just the following features: 'Windows SDK for Desktop C++ x86 Apps', 'Windows SDK for Desktop C++ amd64 Apps' and its dependencies.`);
     }
 
     return Transformer.sealPartialDirectory(installedSdkLocation, globR(installedSdkLocation, "*.*"));
