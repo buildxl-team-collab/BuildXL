@@ -28,6 +28,8 @@ namespace BuildXL.Cache.Host.Service.Internal
         private readonly Dictionary<string, IContentStore> _drivesWithContentStore;
         private readonly string _preferredCacheDrive;
 
+        internal IContentStore PreferredContentStore { get; }
+
         /// <summary>
         /// Execution tracer for the session.
         /// </summary>
@@ -53,6 +55,7 @@ namespace BuildXL.Cache.Host.Service.Internal
 
             _drivesWithContentStore = drivesWithContentStore;
             _preferredCacheDrive = preferredCacheDrive;
+            PreferredContentStore = drivesWithContentStore[preferredCacheDrive];
         }
 
         /// <inheritdoc />
@@ -306,7 +309,7 @@ namespace BuildXL.Cache.Host.Service.Internal
 
             foreach (var kvp in _drivesWithContentStore)
             {
-                if (kvp.Key == _preferredCacheDrive)
+                if (preferredCacheStore == kvp.Value)
                 {
                     // Already checked the preferred cache
                     continue;
