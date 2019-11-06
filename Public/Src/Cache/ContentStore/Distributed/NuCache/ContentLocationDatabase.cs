@@ -499,7 +499,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         }
 
         /// <nodoc />
-        protected void Store(OperationContext context, ShortHash hash, ContentLocationEntry entry)
+        internal void Store(OperationContext context, ShortHash hash, ContentLocationEntry entry)
         {
             Counters[ContentLocationDatabaseCounters.NumberOfStoreOperations].Increment();
 
@@ -555,6 +555,39 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         internal void ForceCacheFlush(OperationContext context)
         {
             ForceCacheFlushAsync(context).GetAwaiter().GetResult();
+        }
+
+        internal ContentLocationEntry AddOrMergeEntry(OperationContext context, ShortHash hash, ContentLocationEntry entry)
+        {
+            lock (GetLock(hash))
+            {
+                if (TryGetEntryCore(context, hash, out var retrievedEntry))
+                {
+                    entry = MergeEntries(entry, retrievedEntry);
+                }
+
+                if (entry.Locations.Count == 0)
+                {
+                    // Remove the hash when no more locations are registered
+                    Delete(context, hash);
+                }
+                else
+                {
+                    Store(context, hash, entry);
+                }
+
+                return entry;
+            }
+        }
+
+        internal ContentLocationEntry MergeEntries(ContentLocationEntry entry, ContentLocationEntry other)
+        {
+            entry = entry.SetMachineExistence(
+                other.Locations,
+                true,
+                Clock.UtcNow, // Update time stamp for use with garbage collection
+                entry.ContentSize > 0 ? entry.ContentSize : other.ContentSize);
+            return entry;
         }
 
         // TODO: Track OperationReason/EntryOperation at event hub batch level

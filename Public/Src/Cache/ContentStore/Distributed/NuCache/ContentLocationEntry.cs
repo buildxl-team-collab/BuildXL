@@ -128,6 +128,15 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         }
 
         /// <nodoc />
+        public ContentLocationEntry Merge(ContentLocationEntry other)
+        {
+            if (IsMissing) return other;
+            if (other.IsMissing) return this;
+
+            return SetMachineExistence(other.Locations, true, other.LastAccessTimeUtc, Math.Max(ContentSize, other.ContentSize));
+        }
+
+        /// <nodoc />
         public ContentLocationEntry SetMachineExistence(IReadOnlyCollection<MachineId> machines, bool exists, UnixTime? lastAccessTime = null, long? size = null)
         {
             var locations = Locations.SetExistence(machines, exists);

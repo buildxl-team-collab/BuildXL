@@ -1,0 +1,89 @@
+WIP:
+
+Pin logic
+Query local
+Query shared (no global)
+
+Initiate copy if there are locations in local/shared results
+If no locations, need to query global
+
+Trace number of avoided Redis queries
+
+Pin better copy:
+Use local, shared, then global results
+Don't copy if available on another machine in build ring. Just pin on that machine in the build ring session.
+
+PutBlob:
+Go to local db, shared and event hub. No Redis.
+
+GetBlob
+Go to shared and local db.
+
+Grpc PutStream for small blobs.
+PutStream goes to PutBlob (no storing in local CAS)
+
+Grpc OpenStream for small blobs
+Check local db, local CAS, then ring location db
+
+PutFile:
+Shared, then global
+Avoid global if there is another machine in build ring which has content
+- Determine if we really need to go to global by tracking how many times we get results from global when there
+were (no?/few?) results in shared
+
+Smarter logic for determining when content registration can be skipped. Take into account which machines the content is on and its last access time.
+
+Avoid locks for reads when content is already pinned in FsContentStore
+
+Proactive put to designated replicators and always check designated replicators for content
+
+Watch out for Raided cluster state!!!
+
+Don't restore when there are no active sessions or maybe a random set of idle machines restore. Another option is to just use a larger
+restore interval when machine is idle.
+    - Might want to have the postInitializationTask be a lazy (or maybe a property with last restore time) so that operations block until a fresh
+    checkpoint is restored
+
+Results from shared database should not count against machine reputation?
+
+Only need to update build ring locations for queries about successfully pinned content. Allow exposing ContentLocationEntry from GetBulkLocationsResult so that this can be
+reported to the build ring.
+
+Proactive put just goes to shared for small content.
+Only large content is transferred to other machine CAS's.
+ - Limit the amount of storage which can go to shared
+
+Maybe use a default 'master' when there is no build master for shared session location store
+    Need to worry about lifetime of the shared db in this case since its normally purely additive
+
+Changes by op:
+
+All
+* Check local CAS
+
+Pin
+* Check local CAS
+    * Register local location with shared
+    * Proactive put
+* Check local db
+    * If sufficient locations, report locations to shared db
+        * Should we just always query shared db and have it return results from its local db
+* Check shared db
+    * DO NOT use locations in shared db as count towards sufficient replicas (unless in build ring?)
+
+* Copy using local db, then shared db, then global
+
+Place
+* Copy from locations in local db (or blob)
+* Copy from locations in shared db (or blob)
+* Copy from locations in global
+
+Open
+* Copy from locations in local db (or blob)
+* Copy from locations in shared db (or blob)
+* Copy from locations in global
+
+Put
+* Register with shared (shared registers with global if needed [Maybe never register with global])
+
+** Don't trust db when updates are old for pin results.

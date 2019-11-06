@@ -15,7 +15,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
     /// <summary>
     /// Interface that represents a global location store (currently backed by Redis).
     /// </summary>
-    public interface IGlobalLocationStore : ICheckpointRegistry, IStartupShutdownSlim
+    public interface IGlobalLocationStore : ILocationStore, ICheckpointRegistry, IStartupShutdownSlim
     {
         /// <summary>
         /// Machine id for the current machine as represented in the global cluster state.
@@ -42,37 +42,6 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         /// Notifies a central store that the current machine is about to be repaired and will be inactive.
         /// </summary>
         Task<BoolResult> InvalidateLocalMachineAsync(OperationContext context);
-
-        /// <summary>
-        /// Gets the list of <see cref="ContentLocationEntry"/> for every hash specified by <paramref name="contentHashes"/> from a central store.
-        /// </summary>
-        /// <remarks>
-        /// The resulting collection (in success case) will have the same size as <paramref name="contentHashes"/>.
-        /// </remarks>
-        Task<Result<IReadOnlyList<ContentLocationEntry>>> GetBulkAsync(OperationContext context, IReadOnlyList<ContentHash> contentHashes);
-
-        /// <summary>
-        /// Notifies a central store that content represented by <paramref name="contentHashes"/> is available on a current machine.
-        /// </summary>
-        Task<BoolResult> RegisterLocalLocationAsync(OperationContext context, IReadOnlyList<ContentHashWithSize> contentHashes);
-
-        /// <summary>
-        /// Puts a blob into the content location store.
-        /// </summary>
-        Task<BoolResult> PutBlobAsync(OperationContext context, ContentHash hash, byte[] blob);
-
-        /// <summary>
-        /// Gets a blob from the content location store.
-        /// </summary>
-        Task<Result<byte[]>> GetBlobAsync(OperationContext context, ContentHash hash);
-
-        /// <summary>
-        /// Gets a value indicating whether the store supports storing and retrieving blobs.
-        /// </summary>
-        bool AreBlobsSupported { get; }
-
-        /// <nodoc />
-        CounterSet GetCounters(OperationContext context);
 
         /// <nodoc />
         CounterCollection<GlobalStoreCounters> Counters { get; }
