@@ -240,6 +240,22 @@ namespace BuildXL.Cache.Monitor.App
             //        Rule: new BuildFailuresRule(configuration),
             //        PollingPeriod: TimeSpan.FromMinutes(30));
             //});
+
+            Add(kustoConfiguration =>
+            {
+                var configuration = new FireAndForgetExceptionsRule.Configuration(kustoConfiguration);
+                return (
+                    Rule: new FireAndForgetExceptionsRule(configuration),
+                    PollingPeriod: configuration.LookbackPeriod);
+            });
+
+            Add(kustoConfiguration =>
+            {
+                var configuration = new ContractViolationsRule.Configuration(kustoConfiguration);
+                return (
+                    Rule: new ContractViolationsRule(configuration),
+                    PollingPeriod: configuration.LookbackPeriod);
+            });
         }
 
         /// <summary>

@@ -4,7 +4,6 @@ using System.Diagnostics.ContractsLight;
 using System.Linq;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
-using BuildXL.Utilities;
 using Kusto.Data.Common;
 
 namespace BuildXL.Cache.Monitor.App.Rules
@@ -78,7 +77,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             if (results.Count == 0)
             {
                 Emit(context, "NoLogs", Severity.Fatal,
-                    $"No machines logged anything in the last day",
+                    $"No machines logged anything in the last `{_configuration.ActivityThreshold}`",
                     eventTimeUtc: now);
                 return;
             }
