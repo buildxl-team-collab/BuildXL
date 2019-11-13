@@ -297,6 +297,7 @@ namespace BuildXL.Scheduler
                         false,
                         // report accesses to symlink chain elements
                         symlinkChain,
+                        ReadOnlyArray<AbsolutePath>.Empty,
                         ReadOnlyArray<AbsolutePath>.Empty);
                 }
                 catch (BuildXLException ex)
@@ -1134,7 +1135,7 @@ namespace BuildXL.Scheduler
         /// <param name="pip">The pip to execute</param>
         /// <param name="fingerprint">The pip fingerprint</param>
         /// <param name="processIdListener">Callback to call when the process is actually started</param>
-        /// <param name="expectedRamUsageMb">the expected ram usage for the process in megabytes</param>
+        /// <param name="expectedMemoryCounters">the expected memory counters for the process in megabytes</param>
         /// <returns>A task that returns the execution result when done</returns>
         public static async Task<ExecutionResult> ExecuteProcessAsync(
             OperationContext operationContext,
@@ -1145,7 +1146,7 @@ namespace BuildXL.Scheduler
             // TODO: This should be removed, or should become a WeakContentFingerprint
             ContentFingerprint? fingerprint,
             Action<int> processIdListener = null,
-            int expectedRamUsageMb = 0)
+            ProcessMemoryCounters expectedMemoryCounters = default(ProcessMemoryCounters))
         {
             var context = environment.Context;
             var counters = environment.Counters;
@@ -1307,7 +1308,7 @@ namespace BuildXL.Scheduler
                 .ExecuteWithResources(
                     operationContext,
                     pip.PipId,
-                    expectedRamUsageMb,
+                    expectedMemoryCounters,
                     allowResourceBasedCancellation,
                     async (resourceLimitCancellationToken, registerQueryRamUsageMb) =>
                     {
@@ -1326,7 +1327,7 @@ namespace BuildXL.Scheduler
                                         processDescription,
                                         (long)(operationContext.Duration?.TotalMilliseconds ?? -1),
                                         peakMemoryMb: lastObservedPeakRamUsage,
-                                        expectedMemoryMb: expectedRamUsageMb);
+                                        expectedMemoryMb: expectedMemoryCounters.PeakWorkingSetMb);
 
                                     using (operationContext.StartAsyncOperation(PipExecutorCounter.ResourceLimitCancelProcessDuration))
                                     {
@@ -1342,7 +1343,9 @@ namespace BuildXL.Scheduler
                             int remainingInternalSandboxedProcessExecutionFailureRetries = InternalSandboxedProcessExecutionFailureRetryCountMax;
 
                             int retryCount = 0;
+                            bool userRetry = false;
                             SandboxedProcessPipExecutionResult result;
+                            var aggregatePipProperties = new Dictionary<string, int>();
 
                             // Retry pip count up to limit if we produce result without detecting file access.
                             // There are very rare cases where a child process is started not Detoured and we don't observe any file accesses from such process.
@@ -1384,7 +1387,7 @@ namespace BuildXL.Scheduler
                                         using (counters[PipExecutorCounter.QueryRamUsageDuration].Start())
                                         {
                                             lastObservedPeakRamUsage =
-                                                (int)ByteSizeFormatter.ToMegabytes((long)(executor.GetActivePeakWorkingSet() ?? 0));
+                                                (int)ByteSizeFormatter.ToMegabytes(executor.GetActivePeakWorkingSet() ?? 0);
                                         }
 
                                         return lastObservedPeakRamUsage;
@@ -1403,6 +1406,21 @@ namespace BuildXL.Scheduler
                                 }
 
                                 ++retryCount;
+
+                                if (result.PipProperties != null)
+                                {
+                                    foreach (var kvp in result.PipProperties)
+                                    {
+                                        if (aggregatePipProperties.TryGetValue(kvp.Key, out var value))
+                                        {
+                                            aggregatePipProperties[kvp.Key] = value + kvp.Value;
+                                        }
+                                        else
+                                        {
+                                            aggregatePipProperties.Add(kvp.Key, kvp.Value);
+                                        }
+                                    }
+                                }
 
                                 lock (s_telemetryDetoursHeapLock)
                                 {
@@ -1446,6 +1464,7 @@ namespace BuildXL.Scheduler
                                                 break;
                                         }
 
+                                        counters.AddToCounter(PipExecutorCounter.RetriedInternalExecutionDuration, result.PrimaryProcessTimes.TotalWallClockTime);
                                         continue;
                                     }
 
@@ -1521,6 +1540,8 @@ namespace BuildXL.Scheduler
                                         remainingUserRetries,
                                         stdErr,
                                         stdOut);
+                                    userRetry = true;
+                                    counters.AddToCounter(PipExecutorCounter.RetriedUserExecutionDuration, result.PrimaryProcessTimes.TotalWallClockTime);
                                     counters.IncrementCounter(PipExecutorCounter.ProcessUserRetries);
 
                                     continue;
@@ -1542,11 +1563,23 @@ namespace BuildXL.Scheduler
                                         operationContext,
                                         processDescription,
                                         (long)(operationContext.Duration?.TotalMilliseconds ?? -1),
-                                        peakMemoryMb:
-                                            (int)ByteSizeFormatter.ToMegabytes((long)(result.JobAccountingInformation?.MemoryCounters.PeakWorkingSet ?? 0)),
-                                        expectedMemoryMb: expectedRamUsageMb,
+                                        peakMemoryMb: result.JobAccountingInformation?.MemoryCounters.PeakWorkingSetMb ?? 0,
+                                        expectedMemoryMb: expectedMemoryCounters.PeakWorkingSetMb,
+                                        peakCommitMb: result.JobAccountingInformation?.MemoryCounters.PeakCommitUsageMb ?? 0,
+                                        expectedCommitMb: expectedMemoryCounters.PeakCommitUsageMb,
                                         cancelMilliseconds: (int)(cancelTime?.TotalMilliseconds ?? 0));
                                 }
+                            }
+
+                            if (userRetry)
+                            {
+                                counters.IncrementCounter(PipExecutorCounter.ProcessUserRetriesImpactedPipsCount);
+                                result.HadUserRetries = true;
+                            }
+
+                            if (aggregatePipProperties.Count > 0)
+                            {
+                                result.PipProperties = aggregatePipProperties;
                             }
 
                             return result;
@@ -1645,6 +1678,7 @@ namespace BuildXL.Scheduler
 
                 // Store the dynamically observed accesses
                 processExecutionResult.DynamicallyObservedFiles = observedInputValidationResult.DynamicallyObservedFiles;
+                processExecutionResult.DynamicallyProbedFiles = observedInputValidationResult.DynamicallyProbedFiles;
                 processExecutionResult.DynamicallyObservedEnumerations = observedInputValidationResult.DynamicallyObservedEnumerations;
                 processExecutionResult.AllowedUndeclaredReads = observedInputValidationResult.AllowedUndeclaredSourceReads;
                 processExecutionResult.AbsentPathProbesUnderOutputDirectories = observedInputValidationResult.AbsentPathProbesUnderNonDependenceOutputDirectories;
@@ -2555,6 +2589,9 @@ namespace BuildXL.Scheduler
                     dynamicallyObservedFiles: observedInputProcessingResult.HasValue
                         ? observedInputProcessingResult.Value.DynamicallyObservedFiles
                         : ReadOnlyArray<AbsolutePath>.Empty,
+                    dynamicallyProbedFiles: observedInputProcessingResult.HasValue
+                        ? observedInputProcessingResult.Value.DynamicallyProbedFiles
+                        : ReadOnlyArray<AbsolutePath>.Empty,
                     dynamicallyObservedEnumerations: observedInputProcessingResult.HasValue
                         ? observedInputProcessingResult.Value.DynamicallyObservedEnumerations
                         : ReadOnlyArray<AbsolutePath>.Empty,
@@ -2610,6 +2647,7 @@ namespace BuildXL.Scheduler
                 ? RunnableFromCacheResult.CreateForHit(
                     weakFingerprint: executionResult.TwoPhaseCachingInfo.WeakFingerprint,
                     dynamicallyObservedFiles: executionResult.DynamicallyObservedFiles,
+                    dynamicallyProbedFiles: executionResult.DynamicallyProbedFiles,
                     dynamicallyObservedEnumerations: executionResult.DynamicallyObservedEnumerations,
                     allowedUndeclaredSourceReads: executionResult.AllowedUndeclaredReads,
                     absentPathProbesUnderNonDependenceOutputDirectories: executionResult.AbsentPathProbesUnderOutputDirectories,
@@ -2940,6 +2978,7 @@ namespace BuildXL.Scheduler
                 // This is the cache-hit path, so there were no uncacheable file accesses.
                 MustBeConsideredPerpetuallyDirty = false,
                 DynamicallyObservedFiles = runnableFromCacheCheckResult.DynamicallyObservedFiles,
+                DynamicallyProbedFiles = runnableFromCacheCheckResult.DynamicallyProbedFiles,
                 DynamicallyObservedEnumerations = runnableFromCacheCheckResult.DynamicallyObservedEnumerations,
                 AllowedUndeclaredReads = runnableFromCacheCheckResult.AllowedUndeclaredReads,
                 AbsentPathProbesUnderOutputDirectories = runnableFromCacheCheckResult.AbsentPathProbesUnderNonDependenceOutputDirectories,
