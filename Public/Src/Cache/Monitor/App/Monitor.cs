@@ -205,7 +205,7 @@ namespace BuildXL.Cache.Monitor.App
                 var configuration = new LastProducedCheckpointRule.Configuration(baseConfiguration);
                 return Utilities.Yield(new Instantiation() {
                     Rule = new LastProducedCheckpointRule(configuration),
-                    PollingPeriod = configuration.WarningThreshold,
+                    PollingPeriod = TimeSpan.FromMinutes(30),
                 });
             });
 
@@ -297,6 +297,11 @@ namespace BuildXL.Cache.Monitor.App
                 new OperationFailureCheckRule.Check()
                 {
                     Match = "ProcessEventsCoreAsync",
+                },
+                new OperationFailureCheckRule.Check()
+                {
+                    // TODO(jubayard): lower severity
+                    Match = "SendEventsCoreAsync",
                 },
             };
 

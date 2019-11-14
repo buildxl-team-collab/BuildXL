@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Diagnostics.ContractsLight;
-using System.Linq;
 using System.Threading.Tasks;
 using Kusto.Data.Common;
+using static BuildXL.Cache.Monitor.App.Utilities;
 
 namespace BuildXL.Cache.Monitor.App.Rules
 {
@@ -17,9 +17,11 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
             public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromMinutes(20);
 
-            public int MachinesWarningThreshold { get; set; } = 10;
-
-            public int MachinesErrorThreshold { get; set; } = 20;
+            public Thresholds<long> MachinesThresholds = new Thresholds<long>()
+            {
+                Warning = 10,
+                Error = 20,
+            };
 
             public int MinimumErrorsThreshold { get; set; } = 20;
         }
@@ -51,7 +53,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             var now = _configuration.Clock.UtcNow;
             var query =
                 $@"
-                let end = now() - {CslTimeSpanLiteral.AsCslString(Constants.KustoIngestionDelay)};
+                let end = now();
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
                 CloudBuildLogEvent
                 | where PreciseTimeStamp between (start .. end)
@@ -64,17 +66,11 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | project PreciseTimeStamp, Machine, Operation, Exception
                 | summarize Machines=dcount(Machine), Count=count() by Operation
                 | where not(isnull(Machines))";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
-
-            if (results.Count == 0)
-            {
-                // NOTE(jubayard): this is good, there were no unhandled exceptions!
-                return;
-            }
+            var results = await QuerySingleResultSetAsync<Result>(query);
 
             foreach (var result in results)
             {
-                Utilities.SeverityFromThreshold(result.Machines, _configuration.MachinesWarningThreshold, _configuration.MachinesErrorThreshold, (severity, threshold) =>
+                _configuration.MachinesThresholds.Check(result.Machines, (severity, threshold) =>
                 {
                     if (result.Count < _configuration.MinimumErrorsThreshold)
                     {

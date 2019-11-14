@@ -2,8 +2,8 @@
 using System.Diagnostics.ContractsLight;
 using System.Linq;
 using System.Threading.Tasks;
-using BuildXL.Cache.ContentStore.Interfaces.Logging;
 using Kusto.Data.Common;
+using static BuildXL.Cache.Monitor.App.Utilities;
 
 namespace BuildXL.Cache.Monitor.App.Rules
 {
@@ -21,7 +21,19 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 set => _name = value;
             }
 
-            public Severity Severity { get; set; } = Severity.Error;
+            public Thresholds<long> CountThresholds { get; set; } = new Thresholds<long>()
+            {
+                Info = 1,
+                Warning = 10,
+                Error = 50,
+            };
+
+            public Thresholds<long> MachinesThresholds { get; set; } = new Thresholds<long>()
+            {
+                Info = 1,
+                Error = 5,
+                Fatal = 50,
+            };
         }
 
         public class Configuration : KustoRuleConfiguration
@@ -85,19 +97,15 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | summarize Count=count(), Machines=dcount(Machine, 2) by Operation, ExceptionType
                 | where not(isnull(Machines))
                 | sort by Machines desc, Count desc";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
-
-            if (results.Count == 0)
-            {
-                // NOTE(jubayard): this is good, there were no errors!
-                return;
-            }
+            var results = await QuerySingleResultSetAsync<Result>(query);
 
             foreach (var result in results)
             {
-                Emit(context, $"Errors_Operation_{_configuration.Check.Name}_{result.Operation}", _configuration.Check.Severity,
-                    $"`{result.Machines}` machine(s) had `{result.Count}` errors (`{result.ExceptionType}`) in operation `{result.Operation}`",
-                    eventTimeUtc: now);
+                BiThreshold(result.Count, result.Machines, _configuration.Check.CountThresholds, _configuration.Check.MachinesThresholds, (severity, countThreshold, machinesThreshold) => {
+                    Emit(context, $"Errors_Operation_{_configuration.Check.Name}_{result.Operation}", severity,
+                        $"`{result.Machines}` machine(s) had `{result.Count}` errors (`{result.ExceptionType}`) in operation `{result.Operation}`",
+                        eventTimeUtc: now);
+                });
             }
         }
     }

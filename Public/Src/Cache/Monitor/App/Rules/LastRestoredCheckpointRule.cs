@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
 using Kusto.Data.Common;
+using static BuildXL.Cache.Monitor.App.Utilities;
 
 namespace BuildXL.Cache.Monitor.App.Rules
 {
@@ -19,11 +20,22 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
             public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromHours(2);
 
-            public TimeSpan ActivityThreshold { get; set; } = TimeSpan.FromHours(1);
+            public TimeSpan ActivityPeriod { get; set; } = TimeSpan.FromHours(1);
 
-            public int MissingRestoreMachinesThreshold { get; set; } = 20;
+            public Thresholds<int> MissingRestoreMachinesThresholds = new Thresholds<int>() {
+                Info = 1,
+                Warning = 5,
+                Error = 20,
+                Fatal = 50,
+            };
 
-            public int OldRestoreMachinesThreshold { get; set; } = 5;
+            public Thresholds<int> OldRestoreMachinesThresholds = new Thresholds<int>()
+            {
+                Info = 1,
+                Warning = 5,
+                Error = 20,
+                Fatal = 50,
+            };
 
             public TimeSpan CheckpointAgeErrorThreshold { get; set; } = TimeSpan.FromMinutes(45);
         }
@@ -56,7 +68,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 $@"
                 let end = now();
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
-                let activity = end - {CslTimeSpanLiteral.AsCslString(_configuration.ActivityThreshold)};
+                let activity = end - {CslTimeSpanLiteral.AsCslString(_configuration.ActivityPeriod)};
                 let Events = CloudBuildLogEvent
                 | where PreciseTimeStamp between (start .. end)
                 | where Stamp == ""{_configuration.Stamp}""
@@ -77,7 +89,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             if (results.Count == 0)
             {
                 Emit(context, "NoLogs", Severity.Fatal,
-                    $"No machines logged anything in the last `{_configuration.ActivityThreshold}`",
+                    $"No machines logged anything in the last `{_configuration.ActivityPeriod}`",
                     eventTimeUtc: now);
                 return;
             }
@@ -98,24 +110,24 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 }
             }
 
-            Utilities.SeverityFromThreshold(missing.Count, 1, _configuration.MissingRestoreMachinesThreshold, (severity, threshold) =>
+            _configuration.MissingRestoreMachinesThresholds.Check(missing.Count, (severity, threshold) =>
             {
                 var formattedMissing = missing.Select(m => $"`{m.Machine}`");
                 var machinesCsv = string.Join(", ", formattedMissing);
                 var shortMachinesCsv = string.Join(", ", formattedMissing.Take(5));
                 Emit(context, "NoRestoresThreshold", severity,
-                    $"Found {missing.Count} machine(s) active in the last `{_configuration.ActivityThreshold}`, but without checkpoints restored in at least `{_configuration.LookbackPeriod}`: {machinesCsv}",
+                    $"Found `{missing.Count}` machine(s) active in the last `{_configuration.ActivityPeriod}`, but without checkpoints restored in at least `{_configuration.LookbackPeriod}`: {machinesCsv}",
                     $"`{missing.Count}` machine(s) haven't restored checkpoints in at least `{_configuration.LookbackPeriod}`. Examples: {shortMachinesCsv}",
                     eventTimeUtc: now);
             });
 
-            Utilities.SeverityFromThreshold(failures.Count, 1, _configuration.OldRestoreMachinesThreshold, (severity, threshold) =>
+            _configuration.OldRestoreMachinesThresholds.Check(failures.Count, (severity, threshold) =>
             {
                 var formattedFailures = failures.Select(f => $"`{f.Machine}` ({f.Age.Value})");
                 var machinesCsv = string.Join(", ", formattedFailures);
                 var shortMachinesCsv = string.Join(", ", formattedFailures.Take(5));
                 Emit(context, "OldRestores", severity,
-                    $"Found `{failures.Count}` machine(s) active in the last `{_configuration.ActivityThreshold}`, but with old checkpoints (at least `{_configuration.CheckpointAgeErrorThreshold}`): {machinesCsv}",
+                    $"Found `{failures.Count}` machine(s) active in the last `{_configuration.ActivityPeriod}`, but with old checkpoints (at least `{_configuration.CheckpointAgeErrorThreshold}`): {machinesCsv}",
                     $"`{failures.Count}` machine(s) have checkpoints older than `{_configuration.CheckpointAgeErrorThreshold}`. Examples: {shortMachinesCsv}",
                     eventTimeUtc: now);
             });

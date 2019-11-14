@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
 using Kusto.Data.Common;
+using static BuildXL.Cache.Monitor.App.Utilities;
 
 namespace BuildXL.Cache.Monitor.App.Rules
 {
@@ -20,9 +21,11 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
             public TimeSpan BinWidth { get; set; } = TimeSpan.FromMinutes(10);
 
-            public TimeSpan WarningThreshold { get; set; } = TimeSpan.FromMinutes(30);
-
-            public TimeSpan ErrorThreshold { get; set; } = TimeSpan.FromMinutes(60);
+            public Thresholds<TimeSpan> Thresholds = new Thresholds<TimeSpan>()
+            {
+                Warning = TimeSpan.FromMinutes(30),
+                Error = TimeSpan.FromHours(1),
+            };
         }
 
         private readonly Configuration _configuration;
@@ -52,9 +55,10 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
         public override async Task Run(RuleContext context)
         {
+            var now = _configuration.Clock.UtcNow;
             var query =
                 $@"
-                let end = now() - {CslTimeSpanLiteral.AsCslString(Constants.KustoIngestionDelay)};
+                let end = now();
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
                 let MasterEvents = CloudBuildLogEvent
                 | where PreciseTimeStamp between (start .. end)
@@ -76,7 +80,6 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | order by PreciseTimeStamp desc";
             var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
 
-            var now = _configuration.Clock.UtcNow - Constants.KustoIngestionDelay;
             if (results.Count == 0)
             {
                 Emit(context, "NoLogs", Severity.Fatal,
@@ -86,7 +89,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             }
 
             var delay = results[0].MaxDelay;
-            Utilities.SeverityFromThreshold(delay, _configuration.WarningThreshold, _configuration.ErrorThreshold, (severity, threshold) =>
+            _configuration.Thresholds.Check(delay, (severity, threshold) =>
             {
                 Emit(context, "DelayThreshold", severity,
                     $"EventHub processing delay `{delay}` above threshold `{threshold}`. Master is {results[0].Machine}",

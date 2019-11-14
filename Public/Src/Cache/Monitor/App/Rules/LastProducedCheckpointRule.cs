@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
 using Kusto.Data.Common;
+using static BuildXL.Cache.Monitor.App.Utilities;
 
 namespace BuildXL.Cache.Monitor.App.Rules
 {
@@ -18,9 +19,11 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
             public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromHours(2);
 
-            public TimeSpan WarningThreshold { get; set; } = TimeSpan.FromMinutes(45);
-
-            public TimeSpan ErrorThreshold { get; set; } = TimeSpan.FromHours(1);
+            public Thresholds<TimeSpan> AgeThresholds = new Thresholds<TimeSpan>()
+            {
+                Warning = TimeSpan.FromMinutes(45),
+                Error = TimeSpan.FromHours(1),
+            };
         }
 
         private readonly Configuration _configuration;
@@ -45,12 +48,10 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
         public override async Task Run(RuleContext context)
         {
-            // NOTE(jubayard): When a summarize is run over an empty result set, Kusto produces a single (null) row,
-            // which is why we need to filter it out.
-            var now = _configuration.Clock.UtcNow - Constants.KustoIngestionDelay;
+            var now = _configuration.Clock.UtcNow;
             var query =
                 $@"
-                let end = now() - {CslTimeSpanLiteral.AsCslString(Constants.KustoIngestionDelay)};
+                let end = now();
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
                 CloudBuildLogEvent
                 | where PreciseTimeStamp between (start .. end)
@@ -71,7 +72,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             }
 
             var age = results[0].Age;
-            Utilities.SeverityFromThreshold(age, _configuration.WarningThreshold, _configuration.ErrorThreshold, (severity, threshold) =>
+            _configuration.AgeThresholds.Check(age, (severity, threshold) =>
             {
                 Emit(context, "CreationThreshold", severity,
                     $"Newest checkpoint age `{age}` above threshold `{threshold}`. Master is {results[0].Machine}",

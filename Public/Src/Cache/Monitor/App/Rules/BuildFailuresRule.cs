@@ -2,11 +2,10 @@
 using System.Collections.Generic;
 using System.Diagnostics.ContractsLight;
 using System.Linq;
-using System.Security.Permissions;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
-using BuildXL.Cache.Monitor.App.Analysis;
 using Kusto.Data.Common;
+using static BuildXL.Cache.Monitor.App.Utilities;
 
 namespace BuildXL.Cache.Monitor.App.Rules
 {
@@ -21,14 +20,18 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
             public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromHours(1);
 
-            public List<string> ErrorBuckets { get; set; } = new List<string>() {
+            public List<string> CacheErrorBuckets { get; set; } = new List<string>() {
                 "PipMaterializeDependenciesFromCacheFailure",
                 "PipFailedToMaterializeItsOutputs"
             };
 
-            public double FailureRateWarningThreshold { get; set; } = 0.2;
-
-            public double FailureRateErrorThreshold { get; set; } = 0.4;
+            public Thresholds<double> FailureRateThresholds = new Thresholds<double>()
+            {
+                Info = 0.1,
+                Warning = 0.2,
+                Error = 0.4,
+                Fatal = 0.5,
+            };
         }
 
         private readonly Configuration _configuration;
@@ -64,13 +67,13 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
         public override async Task Run(RuleContext context)
         {
-            var now = _configuration.Clock.UtcNow - Constants.KustoIngestionDelay;
+            var now = _configuration.Clock.UtcNow;
             var query =
                 $@"
-                let end = now() - {CslTimeSpanLiteral.AsCslString(Constants.KustoIngestionDelay)};
+                let end = now();
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
                 CacheBuildXLInvocationsWithErrors(""{_configuration.Stamp}"", start, end)
-                | extend CacheImplicatedFailure=(ErrorBucket in ({string.Join(",", _configuration.ErrorBuckets.Select(b => @$"""{b}"""))}))
+                | extend CacheImplicatedFailure=(ErrorBucket in ({string.Join(",", _configuration.CacheErrorBuckets.Select(b => @$"""{b}"""))}))
                 | sort by BuildEndTime desc";
             var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
 
@@ -84,7 +87,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
             var cacheFailures = results.Count(r => r.CacheImplicatedFailure);
             var failureRate = (double)cacheFailures / (double)results.Count;
-            Utilities.SeverityFromThreshold(failureRate, _configuration.FailureRateWarningThreshold, _configuration.FailureRateErrorThreshold, (severity, threshold) =>
+            _configuration.FailureRateThresholds.Check(failureRate, (severity, threshold) =>
             {
                 Emit(context, "FailureRate", severity,
                     $"Build failure rate `{failureRate}` over last `{_configuration.LookbackPeriod}` greater than `{threshold}`",

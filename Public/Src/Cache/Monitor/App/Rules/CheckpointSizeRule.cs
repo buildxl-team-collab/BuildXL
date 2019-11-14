@@ -80,11 +80,10 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
         public override async Task Run(RuleContext context)
         {
-            // NOTE(jubayard): When a summarize is run over an empty result set, Kusto produces a single (null) row,
-            // which is why we need to filter it out.
+            var now = _configuration.Clock.UtcNow;
             var query =
                 $@"
-                let end = now() - {CslTimeSpanLiteral.AsCslString(Constants.KustoIngestionDelay)};
+                let end = now();
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
                 CloudBuildLogEvent
                 | where PreciseTimeStamp between (start .. end)
@@ -99,7 +98,6 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | where not(isnull(PreciseTimeStamp))";
             var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
 
-            var now = _configuration.Clock.UtcNow - Constants.KustoIngestionDelay;
             if (results.Count == 0)
             {
                 _configuration.Logger.Error($"No checkpoints have been produced for at least {_configuration.LookbackPeriod}");

@@ -58,8 +58,6 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
         public override async Task Run(RuleContext context)
         {
-            // NOTE(jubayard): When a summarize is run over an empty result set, Kusto produces a single (null) row,
-            // which is why we need to filter it out.
             // NOTE(jubayard): The Kusto ingestion delay needs to be taken into consideration to avoid the number of
             // machines being reported as much less than they actually are.
             var now = _configuration.Clock.UtcNow - Constants.KustoIngestionDelay;
