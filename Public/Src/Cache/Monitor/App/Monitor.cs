@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.ContractsLight;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Time;
@@ -59,7 +60,6 @@ namespace BuildXL.Cache.Monitor.App
                         "MW_PS06",
                         "MW_PS07",
                         "MW_S1",
-                        "MW_S10",
                         "MW_S2",
                         "MW_S3",
                         "MW_S4",
@@ -188,83 +188,140 @@ namespace BuildXL.Cache.Monitor.App
             return _scheduler.RunAsync(cancellationToken);
         }
 
+        private struct Instantiation
+        {
+            public IRule Rule { get; set; }
+
+            public TimeSpan PollingPeriod { get; set; }
+        };
+
         /// <summary>
         /// Creates the schedule of rules that will be run. Also responsible for configuring them.
         /// </summary>
         private void CreateSchedule()
         {
-            Add(kustoConfiguration =>
+            OncePerStamp(baseConfiguration =>
             {
-                var configuration = new LastProducedCheckpointRule.Configuration(kustoConfiguration);
-                return (
-                    Rule: new LastProducedCheckpointRule(configuration),
-                    PollingPeriod: configuration.WarningThreshold);
+                var configuration = new LastProducedCheckpointRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation() {
+                    Rule = new LastProducedCheckpointRule(configuration),
+                    PollingPeriod = configuration.WarningThreshold,
+                });
             });
 
-            Add(kustoConfiguration =>
+            OncePerStamp(baseConfiguration =>
             {
-                var configuration = new LastRestoredCheckpointRule.Configuration(kustoConfiguration);
-                return (
-                    Rule: new LastRestoredCheckpointRule(configuration),
-                    PollingPeriod: configuration.CheckpointAgeErrorThreshold);
+                var configuration = new LastRestoredCheckpointRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation() {
+                    Rule = new LastRestoredCheckpointRule(configuration),
+                    PollingPeriod = configuration.CheckpointAgeErrorThreshold,
+                });
             });
 
-            Add(kustoConfiguration =>
+            OncePerStamp(baseConfiguration =>
             {
-                var configuration = new CheckpointSizeRule.Configuration(kustoConfiguration);
-                return (
-                    Rule: new CheckpointSizeRule(configuration),
-                    PollingPeriod: configuration.AnomalyDetectionHorizon);
+                var configuration = new CheckpointSizeRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation() {
+                    Rule = new CheckpointSizeRule(configuration),
+                    PollingPeriod = configuration.AnomalyDetectionHorizon,
+                });
             });
 
-            Add(kustoConfiguration =>
+            OncePerStamp(baseConfiguration =>
             {
-                var configuration = new ActiveMachinesRule.Configuration(kustoConfiguration);
-                return (
-                    Rule: new ActiveMachinesRule(configuration),
-                    PollingPeriod: configuration.AnomalyDetectionHorizon);
+                var configuration = new ActiveMachinesRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation() {
+                    Rule = new ActiveMachinesRule(configuration),
+                    PollingPeriod = configuration.AnomalyDetectionHorizon,
+                });
             });
 
-            Add(kustoConfiguration =>
+            OncePerStamp(baseConfiguration =>
             {
-                var configuration = new EventHubProcessingDelayRule.Configuration(kustoConfiguration);
-                return (
-                    Rule: new EventHubProcessingDelayRule(configuration),
-                    PollingPeriod: configuration.BinWidth);
+                var configuration = new EventHubProcessingDelayRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation() {
+                    Rule = new EventHubProcessingDelayRule(configuration),
+                    PollingPeriod = configuration.BinWidth,
+                });
             });
 
-            //Add(kustoConfiguration =>
+            //OncePerStamp(baseConfiguration =>
             //{
-            //    var configuration = new BuildFailuresRule.Configuration(kustoConfiguration);
-            //    return (
-            //        Rule: new BuildFailuresRule(configuration),
-            //        PollingPeriod: TimeSpan.FromMinutes(30));
+            //    var configuration = new BuildFailuresRule.Configuration(baseConfiguration);
+            //    return Utilities.Yield(new Instantiation()
+            //    {
+            //        Rule = new BuildFailuresRule(configuration),
+            //        PollingPeriod = TimeSpan.FromMinutes(30),
+            //    });
             //});
 
-            Add(kustoConfiguration =>
+            OncePerStamp(baseConfiguration =>
             {
-                var configuration = new FireAndForgetExceptionsRule.Configuration(kustoConfiguration);
-                return (
-                    Rule: new FireAndForgetExceptionsRule(configuration),
-                    PollingPeriod: configuration.LookbackPeriod);
+                var configuration = new FireAndForgetExceptionsRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation() {
+                    Rule = new FireAndForgetExceptionsRule(configuration),
+                    PollingPeriod = configuration.LookbackPeriod,
+                });
             });
 
-            Add(kustoConfiguration =>
+            OncePerStamp(baseConfiguration =>
             {
-                var configuration = new ContractViolationsRule.Configuration(kustoConfiguration);
-                return (
-                    Rule: new ContractViolationsRule(configuration),
-                    PollingPeriod: configuration.LookbackPeriod);
+                var configuration = new ContractViolationsRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation() {
+                    Rule = new ContractViolationsRule(configuration),
+                    PollingPeriod = configuration.LookbackPeriod,
+                });
+            });
+
+            var checks = new List<OperationFailureCheckRule.Check>() {
+                new OperationFailureCheckRule.Check()
+                {
+                    Match = "StartupAsync",
+                },
+                new OperationFailureCheckRule.Check()
+                {
+                    Match = "ShutdownAsync",
+                },
+                new OperationFailureCheckRule.Check()
+                {
+                    Match = "RestoreCheckpointAsync",
+                },
+                new OperationFailureCheckRule.Check()
+                {
+                    Match = "CreateCheckpointAsync",
+                },
+                new OperationFailureCheckRule.Check()
+                {
+                    Match = "ReconcileAsync",
+                },
+                new OperationFailureCheckRule.Check()
+                {
+                    Match = "ProcessEventsCoreAsync",
+                },
+            };
+
+            OncePerStamp(baseConfiguration =>
+            {
+                return checks.Select(check => {
+                    var configuration = new OperationFailureCheckRule.Configuration(baseConfiguration)
+                    {
+                        Check = check,
+                    };
+
+                    return new Instantiation()
+                    {
+                        Rule = new OperationFailureCheckRule(configuration),
+                        PollingPeriod = configuration.LookbackPeriod,
+                    };
+                });
             });
         }
 
         /// <summary>
         /// Schedules a rule to be run over different stamps and environments.
         /// </summary>
-        private void Add(Func<KustoRuleConfiguration, (IRule Rule, TimeSpan PollingPeriod)> generator)
+        private void OncePerStamp(Func<KustoRuleConfiguration, IEnumerable<Instantiation>> generator)
         {
-            // TODO(jubayard): this could be done more efficiently by not creating a KustoRuleConfiguration for every
-            // call (i.e. first getting the list of rules, and then creating the instances).
             Contract.RequiresNotNull(generator);
 
             foreach (var kvp in Stamps)
@@ -283,8 +340,10 @@ namespace BuildXL.Cache.Monitor.App
                         Stamp = stamp,
                     };
 
-                    var (rule, pollingPeriod) = generator(configuration);
-                    _scheduler.Add(rule, pollingPeriod);
+                    foreach (var entry in generator(configuration))
+                    {
+                        _scheduler.Add(entry.Rule, entry.PollingPeriod);
+                    }
                 }
             }
         }

@@ -1,15 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.ContractsLight;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
 
 namespace BuildXL.Cache.Monitor.App
 {
     internal static class Utilities
     {
+        public static IEnumerable<T> Yield<T>(this T item)
+        {
+            yield return item;
+        }
+
         public static void SplitBy<T>(this IEnumerable<T> enumerable, Func<T, bool> predicate, ICollection<T> trueSet, ICollection<T> falseSet)
         {
             // TODO(jubayard): this function can be split in two cases, find the first index at which the predicate is

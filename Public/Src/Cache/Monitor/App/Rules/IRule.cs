@@ -1,6 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-using BuildXL.Cache.ContentStore.Interfaces.Results;
+﻿using System.Threading.Tasks;
 
 namespace BuildXL.Cache.Monitor.App.Rules
 {
