@@ -48,20 +48,9 @@ namespace BuildXL.Cache.Monitor.App.Rules
 #pragma warning disable CS0649
         private class Result
         {
-            public string Stamp;
-            public string Ring;
-            public string Queue;
-            public string BuildId;
-            public DateTime BuildStartTime;
-            public DateTime BuildEndTime;
-            public TimeSpan BuildTotalTime;
-            public string DominoSessionId;
-            public DateTime MasterInvocationCompletionTime;
-            public int ExitCode;
-            public string ExitKind;
-            public string ErrorBucket;
-            public string BucketMessage;
-            public bool CacheImplicatedFailure;
+            public long Total;
+            public long Failed;
+            public double FailureRate;
         }
 #pragma warning restore CS0649
 
@@ -74,7 +63,9 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
                 CacheBuildXLInvocationsWithErrors(""{_configuration.Stamp}"", start, end)
                 | extend CacheImplicatedFailure=(ErrorBucket in ({string.Join(",", _configuration.CacheErrorBuckets.Select(b => @$"""{b}"""))}))
-                | sort by BuildEndTime desc";
+                | summarize Total=count(), Failed=countif(CacheImplicatedFailure)
+                | extend FailureRate=(toreal(Failed)/toreal(Total))
+                | where not(isnull(Failed))";
             var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
 
             if (results.Count == 0)
@@ -85,8 +76,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 return;
             }
 
-            var cacheFailures = results.Count(r => r.CacheImplicatedFailure);
-            var failureRate = (double)cacheFailures / (double)results.Count;
+            var failureRate = results[0].FailureRate;
             _configuration.FailureRateThresholds.Check(failureRate, (severity, threshold) =>
             {
                 Emit(context, "FailureRate", severity,
