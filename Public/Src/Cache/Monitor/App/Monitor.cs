@@ -245,15 +245,15 @@ namespace BuildXL.Cache.Monitor.App
                 });
             });
 
-            //OncePerStamp(baseConfiguration =>
-            //{
-            //    var configuration = new BuildFailuresRule.Configuration(baseConfiguration);
-            //    return Utilities.Yield(new Instantiation()
-            //    {
-            //        Rule = new BuildFailuresRule(configuration),
-            //        PollingPeriod = TimeSpan.FromMinutes(30),
-            //    });
-            //});
+            OncePerStamp(baseConfiguration =>
+            {
+                var configuration = new BuildFailuresRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation()
+                {
+                    Rule = new BuildFailuresRule(configuration),
+                    PollingPeriod = TimeSpan.FromMinutes(30),
+                });
+            });
 
             OncePerStamp(baseConfiguration =>
             {
