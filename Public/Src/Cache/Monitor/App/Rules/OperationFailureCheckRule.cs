@@ -97,7 +97,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | summarize Count=count(), Machines=dcount(Machine, 2) by Operation, ExceptionType
                 | where not(isnull(Machines))
                 | sort by Machines desc, Count desc";
-            var results = await QuerySingleResultSetAsync<Result>(query);
+            var results = await QuerySingleResultSetAsync<Result>(context, query);
 
             foreach (var result in results)
             {

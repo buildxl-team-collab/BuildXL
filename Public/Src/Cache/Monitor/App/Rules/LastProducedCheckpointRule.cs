@@ -61,7 +61,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | summarize (PreciseTimeStamp, Machine)=arg_max(PreciseTimeStamp, Machine)
                 | extend Age = end - PreciseTimeStamp
                 | where not(isnull(PreciseTimeStamp))";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
+            var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)
             {

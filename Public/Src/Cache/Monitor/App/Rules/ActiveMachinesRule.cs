@@ -72,7 +72,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | summarize ActiveMachines=dcount(Machine, {_configuration.DistinctCountPrecision}) by bin(PreciseTimeStamp, {CslTimeSpanLiteral.AsCslString(_configuration.BinningPeriod)})
                 | sort by PreciseTimeStamp asc
                 | where not(isnull(PreciseTimeStamp))";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
+            var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)
             {

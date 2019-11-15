@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Data;
 using System.Diagnostics.ContractsLight;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
@@ -26,6 +24,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
         protected void Emit(RuleContext context, string bucket, Severity severity, string message, string summary = null, DateTime? eventTimeUtc = null)
         {
+            Contract.RequiresNotNull(context);
             Contract.RequiresNotNull(bucket);
             Contract.RequiresNotNull(message);
 
@@ -44,36 +43,24 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 summary ?? message));
         }
 
-        protected async Task<ObjectReader<T>> QuerySingleResultSetAsync<T>(string query)
+        protected async Task<ObjectReader<T>> QuerySingleResultSetAsync<T>(RuleContext context, string query, string database = null, ClientRequestProperties requestProperties = null)
         {
-            var dataReader = await _configuration.CslQueryProvider.ExecuteQueryAsync(
-                _configuration.KustoDatabaseName,
-                query,
-                new ClientRequestProperties()
-                {
-                    ClientRequestId = Guid.NewGuid().ToString()
-                });
+            Contract.RequiresNotNull(context);
+            Contract.RequiresNotNullOrEmpty(query);
 
-            return new ObjectReader<T>(dataReader, disposeReader: true, nameBasedColumnMapping: true);
-        }
-
-        protected async Task<List<T>> QuerySingleResultSetAsync<T>(string query, Func<IDataRecord, T> transformer)
-        {
-            using var dataReader = await _configuration.CslQueryProvider.ExecuteQueryAsync(
-                _configuration.KustoDatabaseName,
-                query,
-                new ClientRequestProperties()
-                {
-                    ClientRequestId = Guid.NewGuid().ToString()
-                });
-
-            var result = new List<T>();
-            while (!dataReader.IsClosed && dataReader.Read())
+            if (database == null)
             {
-                result.Add(transformer(dataReader));
+                database = _configuration.KustoDatabaseName;
             }
 
-            return result;
+            if (requestProperties == null)
+            {
+                requestProperties = new ClientRequestProperties();
+            }
+            requestProperties.ClientRequestId = context.RunGuid.ToString();
+
+            var dataReader = await _configuration.CslQueryProvider.ExecuteQueryAsync(database, query, requestProperties);
+            return new ObjectReader<T>(dataReader, disposeReader: true, nameBasedColumnMapping: true);
         }
     }
 }

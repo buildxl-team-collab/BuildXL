@@ -66,7 +66,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | summarize Total=count(), Failed=countif(CacheImplicatedFailure)
                 | extend FailureRate=(toreal(Failed)/toreal(Total))
                 | where not(isnull(Failed))";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
+            var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)
             {

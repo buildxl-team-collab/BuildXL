@@ -84,7 +84,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | project-away Machine1
                 | extend Age=LastActivityTime - LastRestoreTime
                 | where not(isnull(Machine))";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
+            var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)
             {

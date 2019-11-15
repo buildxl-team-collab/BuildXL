@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics.ContractsLight;
-using System.Linq;
 using System.Threading.Tasks;
 using BuildXL.Cache.ContentStore.Interfaces.Logging;
 using Kusto.Data.Common;
@@ -62,13 +61,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | where ExceptionType != ""System.UnauthorizedAccessException""
                 | summarize Machines=dcount(Machine, 2), Count=count() by ExceptionType, ExceptionMessage, Operation
                 | where not(isnull(Machines))";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
-
-            if (results.Count == 0)
-            {
-                // NOTE(jubayard): this is good, there were no critical errors!
-                return;
-            }
+            var results = await QuerySingleResultSetAsync<Result>(context, query);
 
             foreach (var result in results)
             {

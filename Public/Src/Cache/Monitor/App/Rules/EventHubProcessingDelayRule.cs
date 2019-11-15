@@ -78,7 +78,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | join MaximumDelayFromEH on Stamp, PreciseTimeStamp
                 | project Machine, PreciseTimeStamp, MaxDelay, AvgProcessingDuration=totimespan(ProcessingDurationMs*10000), MaxProcessingDuration=totimespan(MaxProcessingDurationMs*10000), MessageCount, SumMessageCount, SumMessageSizeMb=SumMessageSize / (1024*1024)
                 | order by PreciseTimeStamp desc";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
+            var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)
             {

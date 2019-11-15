@@ -66,7 +66,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | project PreciseTimeStamp, Machine, Operation, Exception
                 | summarize Machines=dcount(Machine), Count=count() by Operation
                 | where not(isnull(Machines))";
-            var results = await QuerySingleResultSetAsync<Result>(query);
+            var results = await QuerySingleResultSetAsync<Result>(context, query);
 
             foreach (var result in results)
             {

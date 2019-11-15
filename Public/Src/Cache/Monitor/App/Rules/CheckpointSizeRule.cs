@@ -96,7 +96,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 | project PreciseTimeStamp, TotalSize
                 | sort by PreciseTimeStamp asc
                 | where not(isnull(PreciseTimeStamp))";
-            var results = (await QuerySingleResultSetAsync<Result>(query)).ToList();
+            var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)
             {
