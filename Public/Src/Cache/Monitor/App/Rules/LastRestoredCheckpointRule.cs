@@ -22,6 +22,8 @@ namespace BuildXL.Cache.Monitor.App.Rules
 
             public TimeSpan ActivityPeriod { get; set; } = TimeSpan.FromHours(1);
 
+            public TimeSpan MasterActivityPeriod { get; set; } = TimeSpan.FromHours(1);
+
             public Thresholds<int> MissingRestoreMachinesThresholds = new Thresholds<int>() {
                 Info = 1,
                 Warning = 5,
@@ -69,21 +71,35 @@ namespace BuildXL.Cache.Monitor.App.Rules
                 let end = now();
                 let start = end - {CslTimeSpanLiteral.AsCslString(_configuration.LookbackPeriod)};
                 let activity = end - {CslTimeSpanLiteral.AsCslString(_configuration.ActivityPeriod)};
+                let masterActivity = end - {CslTimeSpanLiteral.AsCslString(_configuration.MasterActivityPeriod)};
                 let Events = CloudBuildLogEvent
                 | where PreciseTimeStamp between (start .. end)
                 | where Stamp == ""{_configuration.Stamp}""
                 | where Service == ""{Constants.ServiceName}"" or Service == ""{Constants.MasterServiceName}"";
                 let Machines = Events
                 | where PreciseTimeStamp >= activity
-                | summarize LastActivityTime=max(PreciseTimeStamp) by Machine;
+                | summarize LastActivityTime=max(PreciseTimeStamp) by Machine
+                | where not(isnull(Machine));
+                let CurrentMaster = Events
+                | where PreciseTimeStamp >= masterActivity
+                | where Service == ""{Constants.MasterServiceName}""
+                | where Message has ""CreateCheckpointAsync stop""
+                | summarize (PreciseTimeStamp, Master)=arg_max(PreciseTimeStamp, Machine)
+                | project-away PreciseTimeStamp
+                | where not(isnull(Master));
+                let MachinesWithRole = CurrentMaster
+                | join hint.strategy=broadcast kind=rightouter Machines on $left.Master == $right.Machine
+                | extend IsWorkerMachine=iif(isnull(Master) or isempty(Master), true, false)
+                | project-away Master;
                 let Restores = Events
                 | where Message has ""RestoreCheckpointAsync stop""
                 | summarize LastRestoreTime=max(PreciseTimeStamp) by Machine;
-                Machines
+                MachinesWithRole
+                | where IsWorkerMachine
+                | project-away IsWorkerMachine
                 | join hint.strategy=broadcast kind=leftouter Restores on Machine
                 | project-away Machine1
-                | extend Age=LastActivityTime - LastRestoreTime
-                | where not(isnull(Machine))";
+                | extend Age=LastActivityTime - LastRestoreTime";
             var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)

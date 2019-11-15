@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics.ContractsLight;
-using System.Linq;
 using System.Threading.Tasks;
 using Kusto.Data.Common;
 using static BuildXL.Cache.Monitor.App.Utilities;
