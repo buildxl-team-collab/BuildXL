@@ -473,6 +473,12 @@ config({
                 { id: "Microsoft.Azure.Kusto.Tools", version: "2.2.2" },
                 { id: "Microsoft.Azure.Management.Kusto", version: "1.0.0" },
 
+                { id: "Microsoft.ML", version: "1.4.0" },
+                { id: "Microsoft.ML.CpuMath", version: "1.4.0" },
+                { id: "Microsoft.ML.DataView", version: "1.4.0" },
+                { id: "Microsoft.ML.TimeSeries", version: "1.4.0" },
+                { id: "Microsoft.ML.Mkl.Redist", version: "1.4.0" },
+
                 // ANTLR
                 { id: "Antlr4.Runtime.Standard", version: "4.7.2" }
             ],

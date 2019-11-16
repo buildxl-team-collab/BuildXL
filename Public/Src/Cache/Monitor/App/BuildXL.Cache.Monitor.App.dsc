@@ -49,6 +49,12 @@ namespace App {
 
             importFrom("Newtonsoft.Json").pkg,
             importFrom("WindowsAzure.Storage").pkg,
+
+            importFrom("Microsoft.ML").pkg,
+            importFrom("Microsoft.ML.CpuMath").withQualifier({targetFramework: "netcoreapp3.0"}).pkg,
+            importFrom("Microsoft.ML.DataView").pkg,
+            importFrom("Microsoft.ML.TimeSeries").pkg,
+            importFrom("Microsoft.ML.Mkl.Redist").pkg,
         ],
     });
 }

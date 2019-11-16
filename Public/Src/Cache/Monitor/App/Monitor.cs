@@ -323,6 +323,36 @@ namespace BuildXL.Cache.Monitor.App
                     };
                 });
             });
+
+            //var performanceChecks = new List<OperationPerformanceCheckRule.Check>() {
+            //    new OperationPerformanceCheckRule.Check()
+            //    {
+            //        LookbackPeriod = TimeSpan.FromMinutes(60),
+            //        Match = "CreateCheckpointAsync",
+            //    },
+            //    new OperationPerformanceCheckRule.Check()
+            //    {
+            //        LookbackPeriod = TimeSpan.FromMinutes(60),
+            //        Match = "RestoreCheckpointAsync",
+            //    },
+            //};
+
+            //OncePerStamp(baseConfiguration =>
+            //{
+            //    return performanceChecks.Select(check => {
+            //        var configuration = new OperationPerformanceCheckRule.Configuration(baseConfiguration)
+            //        {
+            //            Check = check,
+            //        };
+
+            //        return new Instantiation()
+            //        {
+            //            Rule = new OperationPerformanceCheckRule(configuration),
+            //            PollingPeriod = TimeSpan.FromMinutes(15),
+            //            ForceRun = true,
+            //        };
+            //    });
+            //});
         }
 
         /// <summary>
