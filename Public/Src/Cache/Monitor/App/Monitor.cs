@@ -103,6 +103,7 @@ namespace BuildXL.Cache.Monitor.App
             public Scheduler.Configuration Scheduler { get; set; } = new Scheduler.Configuration() {
                 PersistStatePath = @"C:\work\Monitor\SchedulerState.json",
                 PersistClearFailedEntriesOnLoad = true,
+                MaximumConcurrency = 20,
             };
 
             /// <summary>
@@ -188,11 +189,13 @@ namespace BuildXL.Cache.Monitor.App
             return _scheduler.RunAsync(cancellationToken);
         }
 
-        private struct Instantiation
+        private class Instantiation
         {
             public IRule Rule { get; set; }
 
             public TimeSpan PollingPeriod { get; set; }
+
+            public bool ForceRun { get; set; } = false;
         };
 
         /// <summary>
@@ -251,7 +254,7 @@ namespace BuildXL.Cache.Monitor.App
                 return Utilities.Yield(new Instantiation()
                 {
                     Rule = new BuildFailuresRule(configuration),
-                    PollingPeriod = TimeSpan.FromMinutes(30),
+                    PollingPeriod = TimeSpan.FromMinutes(10),
                 });
             });
 
@@ -264,16 +267,16 @@ namespace BuildXL.Cache.Monitor.App
                 });
             });
 
-            OncePerStamp(baseConfiguration =>
-            {
-                var configuration = new ContractViolationsRule.Configuration(baseConfiguration);
-                return Utilities.Yield(new Instantiation() {
-                    Rule = new ContractViolationsRule(configuration),
-                    PollingPeriod = configuration.LookbackPeriod,
-                });
-            });
+            //OncePerStamp(baseConfiguration =>
+            //{
+            //    var configuration = new ContractViolationsRule.Configuration(baseConfiguration);
+            //    return Utilities.Yield(new Instantiation() {
+            //        Rule = new ContractViolationsRule(configuration),
+            //        PollingPeriod = configuration.LookbackPeriod,
+            //    });
+            //});
 
-            var checks = new List<OperationFailureCheckRule.Check>() {
+            var failureChecks = new List<OperationFailureCheckRule.Check>() {
                 new OperationFailureCheckRule.Check()
                 {
                     Match = "StartupAsync",
@@ -307,7 +310,7 @@ namespace BuildXL.Cache.Monitor.App
 
             OncePerStamp(baseConfiguration =>
             {
-                return checks.Select(check => {
+                return failureChecks.Select(check => {
                     var configuration = new OperationFailureCheckRule.Configuration(baseConfiguration)
                     {
                         Check = check,
@@ -347,7 +350,7 @@ namespace BuildXL.Cache.Monitor.App
 
                     foreach (var entry in generator(configuration))
                     {
-                        _scheduler.Add(entry.Rule, entry.PollingPeriod);
+                        _scheduler.Add(entry.Rule, entry.PollingPeriod, entry.ForceRun);
                     }
                 }
             }

@@ -80,7 +80,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             _configuration.FailureRateThresholds.Check(failureRate, (severity, threshold) =>
             {
                 Emit(context, "FailureRate", severity,
-                    $"Build failure rate `{failureRate}` over last `{_configuration.LookbackPeriod}` greater than `{threshold}`",
+                    $"Build failure rate `{Math.Round(failureRate * 100.0, 4, MidpointRounding.AwayFromZero)}%` over last `{_configuration.LookbackPeriod}``",
                     eventTimeUtc: now);
             });
         }

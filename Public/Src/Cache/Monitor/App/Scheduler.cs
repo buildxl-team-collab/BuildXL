@@ -1,4 +1,5 @@
 ﻿using System;
+using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.ContractsLight;
@@ -48,7 +49,7 @@ namespace BuildXL.Cache.Monitor.App
             /// <summary>
             /// Number of rules that may be run in parallel
             /// </summary>
-            public int MaximumConcurrency { get; set; } = 20;
+            public int MaximumConcurrency { get; set; } = 10;
         }
 
         private enum State
@@ -74,7 +75,7 @@ namespace BuildXL.Cache.Monitor.App
 
             public State State { get; set; } = State.Waiting;
 
-            public DateTime LastRunTimeUtc { get; set; }
+            public DateTime LastRunTimeUtc { get; set; } = DateTime.MinValue;
 
             public Entry(IRule rule, TimeSpan pollingPeriod)
             {
@@ -135,12 +136,17 @@ namespace BuildXL.Cache.Monitor.App
             _notifier = notifier;
         }
 
-        public void Add(IRule rule, TimeSpan pollingPeriod)
+        public void Add(IRule rule, TimeSpan pollingPeriod, bool forceRun = false)
         {
             Contract.RequiresNotNull(rule);
             Contract.Requires(pollingPeriod > _configuration.PollingPeriod);
 
-            _schedule[rule.Identifier] = new Entry(rule, pollingPeriod);
+            var entry = new Entry(rule, pollingPeriod);
+            _schedule[rule.Identifier] = entry;
+            if (forceRun)
+            {
+                entry.LastRunTimeUtc = DateTime.UtcNow - pollingPeriod;
+            }
         }
 
         public async Task RunAsync(CancellationToken cancellationToken = default)
@@ -389,7 +395,10 @@ namespace BuildXL.Cache.Monitor.App
 
                 Contract.Assert(storedEntry.LastRunTimeUtc >= DateTime.MinValue);
                 Contract.Assert(storedEntry.LastRunTimeUtc <= _clock.UtcNow);
-                entry.LastRunTimeUtc = storedEntry.LastRunTimeUtc;
+                if (entry.LastRunTimeUtc == DateTime.MinValue)
+                {
+                    entry.LastRunTimeUtc = storedEntry.LastRunTimeUtc;
+                }
 
                 if (entry.PollingPeriod != storedEntry.PollingPeriod)
                 {
@@ -402,11 +411,21 @@ namespace BuildXL.Cache.Monitor.App
         {
             Contract.RequiresNotNullOrEmpty(stateFilePath);
 
-            using var stream = File.CreateText(stateFilePath);
-            var serializer = CreateSerializer();
+            var tmpFilePath = $"{stateFilePath}.{Guid.NewGuid()}";
 
-            var schedule = _schedule.ToDictionary(kvp => kvp.Key, kvp => new PersistableEntry(kvp.Value));
-            serializer.Serialize(stream, schedule);
+            using (var stream = File.CreateText(tmpFilePath))
+            {
+                var serializer = CreateSerializer();
+
+                var schedule = _schedule.ToDictionary(kvp => kvp.Key, kvp => new PersistableEntry(kvp.Value));
+                serializer.Serialize(stream, schedule);
+            }
+
+            if (File.Exists(stateFilePath)) {
+                File.Delete(stateFilePath);
+            }
+
+            File.Move(tmpFilePath, stateFilePath);
         }
 
         private static JsonSerializer CreateSerializer()
