@@ -344,7 +344,7 @@ namespace BuildXL.Cache.Monitor.App
                     LookbackPeriod = TimeSpan.FromMinutes(60),
                     DetectionPeriod = TimeSpan.FromMinutes(30),
                     Match = "RedisGlobalStore.RegisterLocalLocationAsync",
-                    Constraint = $"TimeMs >= {TimeSpan.FromSeconds(1).TotalMilliseconds}",
+                    Constraint = $"TimeMs >= {TimeSpan.FromSeconds(30).TotalMilliseconds}",
                 },
                 new OperationPerformanceOutliersRule.DynamicCheck()
                 {
@@ -375,7 +375,6 @@ namespace BuildXL.Cache.Monitor.App
                     {
                         Rule = new OperationPerformanceOutliersRule(configuration),
                         PollingPeriod = TimeSpan.FromMinutes(15),
-                        ForceRun = true,
                     };
                 });
             });
