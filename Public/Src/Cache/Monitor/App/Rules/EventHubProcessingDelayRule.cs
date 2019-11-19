@@ -83,7 +83,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             if (results.Count == 0)
             {
                 Emit(context, "NoLogs", Severity.Fatal,
-                    $"No events processed for at least {_configuration.LookbackPeriod}",
+                    $"No events processed for at least `{_configuration.LookbackPeriod}`",
                     eventTimeUtc: now);
                 return;
             }
@@ -92,7 +92,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             _configuration.Thresholds.Check(delay, (severity, threshold) =>
             {
                 Emit(context, "DelayThreshold", severity,
-                    $"EventHub processing delay `{delay}` above threshold `{threshold}`. Master is {results[0].Machine}",
+                    $"EventHub processing delay `{delay}` above threshold `{threshold}`. Master is `{results[0].Machine}`",
                     eventTimeUtc: results[0].PreciseTimeStamp);
             });
         }

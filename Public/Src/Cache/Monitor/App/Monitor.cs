@@ -324,35 +324,61 @@ namespace BuildXL.Cache.Monitor.App
                 });
             });
 
-            //var performanceChecks = new List<OperationPerformanceCheckRule.Check>() {
-            //    new OperationPerformanceCheckRule.Check()
-            //    {
-            //        LookbackPeriod = TimeSpan.FromMinutes(60),
-            //        Match = "CreateCheckpointAsync",
-            //    },
-            //    new OperationPerformanceCheckRule.Check()
-            //    {
-            //        LookbackPeriod = TimeSpan.FromMinutes(60),
-            //        Match = "RestoreCheckpointAsync",
-            //    },
-            //};
+            var performanceChecks = new List<OperationPerformanceOutliersRule.DynamicCheck>() {
+                new OperationPerformanceOutliersRule.DynamicCheck()
+                {
+                    LookbackPeriod = TimeSpan.FromMinutes(60),
+                    DetectionPeriod = TimeSpan.FromMinutes(30),
+                    Match = "LocalContentServer.StartupAsync",
+                    Constraint = $"TimeMs >= {TimeSpan.FromMinutes(1).TotalMilliseconds}",
+                },
+                new OperationPerformanceOutliersRule.DynamicCheck()
+                {
+                    LookbackPeriod = TimeSpan.FromMinutes(60),
+                    DetectionPeriod = TimeSpan.FromMinutes(30),
+                    Match = "LocalCacheServer.StartupAsync",
+                    Constraint = $"TimeMs >= {TimeSpan.FromMinutes(1).TotalMilliseconds}",
+                },
+                new OperationPerformanceOutliersRule.DynamicCheck()
+                {
+                    LookbackPeriod = TimeSpan.FromMinutes(60),
+                    DetectionPeriod = TimeSpan.FromMinutes(30),
+                    Match = "RedisGlobalStore.RegisterLocalLocationAsync",
+                    Constraint = $"TimeMs >= {TimeSpan.FromSeconds(1).TotalMilliseconds}",
+                },
+                new OperationPerformanceOutliersRule.DynamicCheck()
+                {
+                    LookbackPeriod = TimeSpan.FromDays(1),
+                    DetectionPeriod = TimeSpan.FromHours(1),
+                    Match = "CheckpointManager.CreateCheckpointAsync",
+                    Constraint = $"TimeMs >= {TimeSpan.FromMinutes(1).TotalMilliseconds}",
+                },
+                new OperationPerformanceOutliersRule.DynamicCheck()
+                {
+                    LookbackPeriod = TimeSpan.FromDays(1),
+                    DetectionPeriod = TimeSpan.FromHours(1),
+                    Match = "CheckpointManager.RestoreCheckpointAsync",
+                    Constraint = $"TimeMs >= P95 and P95 >= {TimeSpan.FromMinutes(30).TotalMilliseconds}",
+                },
+            };
 
-            //OncePerStamp(baseConfiguration =>
-            //{
-            //    return performanceChecks.Select(check => {
-            //        var configuration = new OperationPerformanceCheckRule.Configuration(baseConfiguration)
-            //        {
-            //            Check = check,
-            //        };
+            OncePerStamp(baseConfiguration =>
+            {
+                return performanceChecks.Select(check =>
+                {
+                    var configuration = new OperationPerformanceOutliersRule.Configuration(baseConfiguration)
+                    {
+                        Check = check,
+                    };
 
-            //        return new Instantiation()
-            //        {
-            //            Rule = new OperationPerformanceCheckRule(configuration),
-            //            PollingPeriod = TimeSpan.FromMinutes(15),
-            //            ForceRun = true,
-            //        };
-            //    });
-            //});
+                    return new Instantiation()
+                    {
+                        Rule = new OperationPerformanceOutliersRule(configuration),
+                        PollingPeriod = TimeSpan.FromMinutes(15),
+                        ForceRun = true,
+                    };
+                });
+            });
         }
 
         /// <summary>
