@@ -217,7 +217,7 @@ namespace BuildXL.Cache.Monitor.App
                 var configuration = new LastRestoredCheckpointRule.Configuration(baseConfiguration);
                 return Utilities.Yield(new Instantiation() {
                     Rule = new LastRestoredCheckpointRule(configuration),
-                    PollingPeriod = configuration.CheckpointAgeErrorThreshold,
+                    PollingPeriod = TimeSpan.FromMinutes(30),
                 });
             });
 
@@ -226,7 +226,7 @@ namespace BuildXL.Cache.Monitor.App
                 var configuration = new CheckpointSizeRule.Configuration(baseConfiguration);
                 return Utilities.Yield(new Instantiation() {
                     Rule = new CheckpointSizeRule(configuration),
-                    PollingPeriod = configuration.AnomalyDetectionHorizon,
+                    PollingPeriod = configuration.AnomalyDetectionHorizon - TimeSpan.FromMinutes(5),
                 });
             });
 
@@ -235,7 +235,7 @@ namespace BuildXL.Cache.Monitor.App
                 var configuration = new ActiveMachinesRule.Configuration(baseConfiguration);
                 return Utilities.Yield(new Instantiation() {
                     Rule = new ActiveMachinesRule(configuration),
-                    PollingPeriod = configuration.AnomalyDetectionHorizon,
+                    PollingPeriod = configuration.AnomalyDetectionHorizon - TimeSpan.FromMinutes(5),
                 });
             });
 
@@ -244,7 +244,7 @@ namespace BuildXL.Cache.Monitor.App
                 var configuration = new EventHubProcessingDelayRule.Configuration(baseConfiguration);
                 return Utilities.Yield(new Instantiation() {
                     Rule = new EventHubProcessingDelayRule(configuration),
-                    PollingPeriod = configuration.BinWidth,
+                    PollingPeriod = TimeSpan.FromMinutes(20),
                 });
             });
 
@@ -254,7 +254,7 @@ namespace BuildXL.Cache.Monitor.App
                 return Utilities.Yield(new Instantiation()
                 {
                     Rule = new BuildFailuresRule(configuration),
-                    PollingPeriod = TimeSpan.FromMinutes(10),
+                    PollingPeriod = TimeSpan.FromMinutes(15),
                 });
             });
 
@@ -263,7 +263,7 @@ namespace BuildXL.Cache.Monitor.App
                 var configuration = new FireAndForgetExceptionsRule.Configuration(baseConfiguration);
                 return Utilities.Yield(new Instantiation() {
                     Rule = new FireAndForgetExceptionsRule(configuration),
-                    PollingPeriod = configuration.LookbackPeriod,
+                    PollingPeriod = configuration.LookbackPeriod - TimeSpan.FromMinutes(5),
                 });
             });
 
@@ -319,7 +319,7 @@ namespace BuildXL.Cache.Monitor.App
                     return new Instantiation()
                     {
                         Rule = new OperationFailureCheckRule(configuration),
-                        PollingPeriod = configuration.LookbackPeriod,
+                        PollingPeriod = configuration.LookbackPeriod - TimeSpan.FromMinutes(5),
                     };
                 });
             });
@@ -374,8 +374,18 @@ namespace BuildXL.Cache.Monitor.App
                     return new Instantiation()
                     {
                         Rule = new OperationPerformanceOutliersRule(configuration),
-                        PollingPeriod = TimeSpan.FromMinutes(15),
+                        PollingPeriod = check.DetectionPeriod - TimeSpan.FromMinutes(5),
                     };
+                });
+            });
+
+            OncePerStamp(baseConfiguration =>
+            {
+                var configuration = new ServiceRestartsRule.Configuration(baseConfiguration);
+                return Utilities.Yield(new Instantiation()
+                {
+                    Rule = new ServiceRestartsRule(configuration),
+                    PollingPeriod = TimeSpan.FromMinutes(30),
                 });
             });
         }

@@ -15,7 +15,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             {
             }
 
-            public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromMinutes(20);
+            public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromMinutes(30);
 
             public Thresholds<long> MachinesThresholds = new Thresholds<long>()
             {

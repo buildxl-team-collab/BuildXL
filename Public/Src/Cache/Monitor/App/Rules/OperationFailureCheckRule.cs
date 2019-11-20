@@ -42,7 +42,7 @@ namespace BuildXL.Cache.Monitor.App.Rules
             {
             }
 
-            public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromMinutes(30);
+            public TimeSpan LookbackPeriod { get; set; } = TimeSpan.FromMinutes(45);
 
             public Check Check { get; set; }
         }

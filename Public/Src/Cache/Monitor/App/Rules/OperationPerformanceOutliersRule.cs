@@ -118,11 +118,13 @@ let DetectionEvents = Events
 | where PreciseTimeStamp between (detection .. end);
 let DescriptiveStatistics = Events
 | where PreciseTimeStamp between (start .. detection){perhapsLookbackFilter}
-| summarize hint.shufflekey=Machine hint.num_partitions=64 (P5, P50, P95)=percentiles(TimeMs, 5, 50, 95), Avg=avg(TimeMs), StdDev=stdev(TimeMs), Maximum=max(TimeMs), Minimum=min(TimeMs) by Machine;
+| summarize hint.shufflekey=Machine hint.num_partitions=64 (P5, P50, P95)=percentiles(TimeMs, 5, 50, 95), Avg=avg(TimeMs), StdDev=stdev(TimeMs), Maximum=max(TimeMs), Minimum=min(TimeMs) by Machine
+| where not(isnull(Machine));
 DescriptiveStatistics
 | join kind=rightouter hint.strategy=broadcast hint.num_partitions=64 DetectionEvents on Machine
 | where {_configuration.Check.Constraint ?? "true"}
-| project PreciseTimeStamp, Machine, OperationId, TimeMs;";
+| project PreciseTimeStamp, Machine, OperationId, TimeMs
+| where not(isnull(Machine));";
             var results = (await QuerySingleResultSetAsync<Result>(context, query)).ToList();
 
             if (results.Count == 0)
@@ -168,8 +170,8 @@ DescriptiveStatistics
                     }));
 
                 Emit(context, $"Performance_{_configuration.Check.Name}", severity,
-                    $"Operation `{_configuration.Check.Name}` has taken too long `{numberOfFailures}` times across `{numberOfMachines}` machines in the last `{_configuration.Check.DetectionPeriod}`. Examples:\r\n{examples}",
-                    $"Operation `{_configuration.Check.Name}` has taken too long `{numberOfFailures}` times across `{numberOfMachines}` machines in the last `{_configuration.Check.DetectionPeriod}`. Examples:\r\n{summaryExamples}",
+                    $"Operation `{_configuration.Check.Name}` has taken too long `{numberOfFailures}` time(s) across `{numberOfMachines}` machine(s) in the last `{_configuration.Check.DetectionPeriod}`. Examples:\r\n{examples}",
+                    $"Operation `{_configuration.Check.Name}` has taken too long `{numberOfFailures}` time(s) across `{numberOfMachines}` machine(s) in the last `{_configuration.Check.DetectionPeriod}`. Examples:\r\n{summaryExamples}",
                     eventTimeUtc: eventTimeUtc);
             });
         }
