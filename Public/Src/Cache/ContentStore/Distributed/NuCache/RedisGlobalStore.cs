@@ -128,7 +128,8 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
         {
             // Get the local machine id
             var machineIdAndIsAdded = await _clusterStateKey.UseReplicatedHashAsync(
-                context, 
+                context,
+                _configuration.RetryWindow,
                 RedisOperation.StartupGetOrAddLocalMachine, 
                 (batch, key) => batch.GetOrAddMachineAsync(key, machineLocation.ToString(), _clock.UtcNow))
                 .ThrowIfFailureAsync();
@@ -162,7 +163,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
                     foreach (var page in contentHashes.AsIndexed().GetPages(_configuration.RedisBatchPageSize))
                     {
-                        var batchResult = await _redis.ExecuteRedisAsync(context, async redisDb =>
+                        var batchResult = await _redis.ExecuteRedisAsync(context, async (redisDb, token) =>
                         {
                             var redisBatch = redisDb.CreateBatch(RedisOperation.GetBulkGlobal);
 
@@ -195,9 +196,10 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                                 }).FireAndForget(context);
                             }
 
-                            return await redisDb.ExecuteBatchOperationAsync(context, redisBatch, context.Token);
+                            // TODO ST: now this operation may fail with TaskCancelledException. But this should be traced differently!
+                            return await redisDb.ExecuteBatchOperationAsync(context, redisBatch, token);
 
-                        });
+                        }, _configuration.RetryWindow);
 
                         if (!batchResult)
                         {
@@ -258,7 +260,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                 {
                     foreach (var page in contentHashes.GetPages(hashBatchSize))
                     {
-                        var batchResult = await _redis.ExecuteRedisAsync(context, async redisDb =>
+                        var batchResult = await _redis.ExecuteRedisAsync(context, async (redisDb, token) =>
                         {
                             Counters[GlobalStoreCounters.RegisterLocalLocationHashCount].Add(page.Count);
 
@@ -290,7 +292,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                                     }).FireAndForget(context);
                                 }
 
-                                var result = await redisDb.ExecuteBatchOperationAsync(context, redisBatch, context.Token);
+                                var result = await redisDb.ExecuteBatchOperationAsync(context, redisBatch, token);
                                 if (!result || requiresSetBitCount == 0)
                                 {
                                     return result;
@@ -315,9 +317,9 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                                     updateRedisBatch.AddOperation(key, batch => SetLocationBitAndExpireAsync(context, batch, key, hash, machineId)).FireAndForget(context);
                                 }
 
-                                return await redisDb.ExecuteBatchOperationAsync(context, updateRedisBatch, context.Token);
+                                return await redisDb.ExecuteBatchOperationAsync(context, updateRedisBatch, token);
                             }
-                        });
+                        }, _configuration.RetryWindow);
 
                         if (!batchResult)
                         {
@@ -404,7 +406,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
                         var localMachineName = LocalMachineLocation.ToString();
 
-                        var masterAcquisitonResult = await _masterLeaseKey.UseReplicatedHashAsync(context, RedisOperation.UpdateRole, (batch, key) => batch.AcquireMasterRoleAsync(
+                        var masterAcquisitonResult = await _masterLeaseKey.UseReplicatedHashAsync(context, _configuration.RetryWindow, RedisOperation.UpdateRole, (batch, key) => batch.AcquireMasterRoleAsync(
                                 masterRoleRegistryKey: key,
                                 machineName: localMachineName,
                                 currentTime: _clock.UtcNow,
@@ -452,7 +454,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
         private async Task<BoolResult> UpdateLocalClusterStateAsync(OperationContext context, ClusterState clusterState)
         {
-            (var heartbeatResult, var getUnknownMachinesResult) = await _clusterStateKey.UseReplicatedHashAsync(context, RedisOperation.UpdateClusterState, async (batch, key) =>
+            (var heartbeatResult, var getUnknownMachinesResult) = await _clusterStateKey.UseReplicatedHashAsync(context, _configuration.RetryWindow, RedisOperation.UpdateClusterState, async (batch, key) =>
             {
                 var heartbeatResultTask = CallHeartbeatAsync(context, batch, key, MachineState.Active);
                 var getUnknownMachinesTask = batch.GetUnknownMachinesAsync(
@@ -521,6 +523,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                 {
                     var (checkpoints, startCursor) = await _checkpointsKey.UseReplicatedHashAsync(
                         context,
+                        _configuration.RetryWindow,
                         RedisOperation.GetCheckpoint,
                         (batch, key) => batch.GetCheckpointsInfoAsync(key, _clock.UtcNow))
                     .ThrowIfFailureAsync();
@@ -563,6 +566,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
 
                     var slotNumber = await _checkpointsKey.UseReplicatedHashAsync(
                         context,
+                        _configuration.RetryWindow,
                         RedisOperation.UploadCheckpoint,
                         (batch, key) => batch.AddCheckpointAsync(key, checkpoint, MaxCheckpointSlotCount)).ThrowIfFailureAsync();
 
@@ -581,6 +585,7 @@ namespace BuildXL.Cache.ContentStore.Distributed.NuCache
                 {
                     return _clusterStateKey.UseReplicatedHashAsync(
                         context,
+                        _configuration.RetryWindow,
                         RedisOperation.InvalidateLocalMachine,
                         (batch, key) => CallHeartbeatAsync(context, batch, key, MachineState.Unavailable));
 

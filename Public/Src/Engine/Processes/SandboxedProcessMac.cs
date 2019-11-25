@@ -247,7 +247,7 @@ namespace BuildXL.Processes
                 // release the FileAccessManifest memory
                 // NOTE: just by not keeping any references to 'info' should make the FileAccessManifest object 
                 //       unreachable and thus available for garbage collection.  We call Release() here explicitly 
-                //       just to emphasise the importance of reclaiming this memory.
+                //       just to emphasize the importance of reclaiming this memory.
                 info.FileAccessManifest.Release();
             }
         }
@@ -396,7 +396,7 @@ namespace BuildXL.Processes
 
             string line = I($"exec {info.FileName} {escapedArguments} {redirectedStdin}");
 
-            LogProcessState("Feeding stdin: " + line);
+            LogProcessState("Feeding stdin");
             await Process.StandardInput.WriteLineAsync(line);
             Process.StandardInput.Close();
         }
@@ -439,7 +439,7 @@ namespace BuildXL.Processes
                         WriteTransferCount = Convert.ToUInt64(m_perfAggregator.DiskBytesWritten.Total)
                     });
 
-                    memoryCounters = new ProcessMemoryCounters(0, Convert.ToUInt64(m_perfAggregator.PeakMemoryBytes.Maximum), 0);
+                    memoryCounters = ProcessMemoryCounters.CreateFromBytes(0, Convert.ToUInt64(m_perfAggregator.PeakMemoryBytes.Maximum), 0);
                 }
                 catch(OverflowException ex)
                 {
@@ -453,7 +453,7 @@ namespace BuildXL.Processes
                         WriteTransferCount = 0
                     });
 
-                    memoryCounters = new ProcessMemoryCounters(0, 0, 0);
+                    memoryCounters = ProcessMemoryCounters.CreateFromBytes(0, 0, 0);
                 }
 
                 return new JobObject.AccountingInformation

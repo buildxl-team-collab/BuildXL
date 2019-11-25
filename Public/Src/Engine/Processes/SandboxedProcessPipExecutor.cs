@@ -708,16 +708,20 @@ namespace BuildXL.Processes
                         Timeout = m_timeout,
                         PipSemiStableHash = m_pip.SemiStableHash,
                         PipDescription = m_pip.GetDescription(m_context),
-                        ProcessIdListener = m_processIdListener,
                         TimeoutDumpDirectory = ComputePipTimeoutDumpDirectory(m_sandboxConfig, m_pip, m_pathTable),
                         SandboxKind = m_sandboxConfig.UnsafeSandboxConfiguration.SandboxKind,
                         AllowedSurvivingChildProcessNames = m_pip.AllowedSurvivingChildProcessNames.Select(n => n.ToString(m_pathTable.StringTable)).ToArray(),
                         NestedProcessTerminationTimeout = m_pip.NestedProcessTerminationTimeout ?? SandboxedProcessInfo.DefaultNestedProcessTerminationTimeout,
                     };
 
-                    return ShouldSandboxedProcessExecuteExternal
+                    var result = ShouldSandboxedProcessExecuteExternal
                         ? await RunExternalAsync(info, allInputPathsUnderSharedOpaques, sandboxPrepTime, cancellationToken)
                         : await RunInternalAsync(info, allInputPathsUnderSharedOpaques, sandboxPrepTime, cancellationToken);
+                    if (result.Status == SandboxedProcessPipExecutionStatus.PreparationFailed)
+                    {
+                        m_processIdListener?.Invoke(0);
+                    }
+                    return result;
                 }
             }
             finally
@@ -736,8 +740,6 @@ namespace BuildXL.Processes
 
         private bool ShouldSandboxedProcessExecuteExternal
             => SandboxedProcessNeedsExecuteExternal
-               // Process does not talk to BuildXL server.
-               && m_processIdListener == null
                // Container is disabled.
                && !m_containerConfiguration.IsIsolationEnabled
                // Windows only.
@@ -1008,7 +1010,15 @@ namespace BuildXL.Processes
                 try
                 {
                     m_activeProcess = process;
-                    result = await process.GetResultAsync();
+                    try
+                    {
+                        m_processIdListener?.Invoke(process.ProcessId);
+                        result = await process.GetResultAsync();
+                    }
+                    finally
+                    {
+                        m_processIdListener?.Invoke(-process.ProcessId);
+                    }
                     lastMessageCount = process.GetLastMessageCount() + result.LastMessageCount;
                     m_numWarnings += result.WarningCount;
                     isMessageCountSemaphoreCreated = m_fileAccessManifest.MessageCountSemaphore != null || result.MessageCountSemaphoreCreated;
@@ -1050,6 +1060,7 @@ namespace BuildXL.Processes
                     process.Dispose();
                 }
 
+                var start = DateTime.UtcNow;
                 SandboxedProcessPipExecutionResult executionResult =
                     await
                         ProcessSandboxedProcessResultAsync(
@@ -1059,6 +1070,7 @@ namespace BuildXL.Processes
                             cancellationTokenSource.Token,
                             process.GetDetoursMaxHeapSize() + result.DetoursMaxHeapSize,
                             allInputPathsUnderSharedOpaques);
+                Tracing.Logger.Log.LogSubPhaseDuration(m_loggingContext, m_pip, SandboxedProcessCounters.SandboxedPipExecutorPhaseProcessingSandboxProcessResult, DateTime.UtcNow.Subtract(start));
 
                 return ValidateDetoursCommunication(
                     executionResult,
@@ -1365,6 +1377,8 @@ namespace BuildXL.Processes
                 numSurvivingChildErrors = ReportSurvivingChildProcesses(result);
             }
 
+            var start = DateTime.UtcNow;
+
             var fileAccessReportingContext = new FileAccessReportingContext(
                 loggingContext,
                 m_context,
@@ -1430,7 +1444,7 @@ namespace BuildXL.Processes
                 }
             }
 
-            bool shouldPersistStandardError = errorOrWarnings || m_pip.StandardError.IsValid;
+            bool shouldPersistStandardError = !canceled && (errorOrWarnings || m_pip.StandardError.IsValid);
             if (shouldPersistStandardError)
             {
                 if (!await TrySaveStandardErrorAsync(result))
@@ -1439,12 +1453,18 @@ namespace BuildXL.Processes
                 }
             }
 
+            Tracing.Logger.Log.LogSubPhaseDuration(m_loggingContext, m_pip, SandboxedProcessCounters.SandboxedPipExecutorPhaseProcessingStandardOutputs, DateTime.UtcNow.Subtract(start));
+
+            start = DateTime.UtcNow;
             SortedReadOnlyArray<ObservedFileAccess, ObservedFileAccessExpandedPathComparer> observed =
                 GetObservedFileAccesses(
                     result,
                     allInputPathsUnderSharedOpaques,
                     out var unobservedOutputs,
                     out var sharedDynamicDirectoryWriteAccesses);
+            Tracing.Logger.Log.LogSubPhaseDuration(m_loggingContext, m_pip, SandboxedProcessCounters.SandboxedPipExecutorPhaseGettingObservedFileAccesses, DateTime.UtcNow.Subtract(start), $"(count: {observed.Length})");
+
+            start = DateTime.UtcNow;
 
             // After standard output and error may been saved, and shared dynamic write accesses were identified, we can merge
             // outputs back to their original locations
@@ -1466,7 +1486,7 @@ namespace BuildXL.Processes
                 loggingSuccess = logErrorResult.Success;
             }
 
-            if (m_numWarnings > 0 && loggingSuccess)
+            if (m_numWarnings > 0 && loggingSuccess && !canceled)
             {
                 if (!await TryLogWarningAsync(result.StandardOutput, result.StandardError))
                 {
@@ -1476,7 +1496,7 @@ namespace BuildXL.Processes
 
             // The full output may be requested based on the result of the pip. If the pip failed, the output may have been reported
             // in TryLogErrorAsync above. Only replicate the output if the error was truncated due to an error regex
-            if ((!standardOutHasBeenWrittenToLog || errorWasTruncated) && loggingSuccess)
+            if ((!standardOutHasBeenWrittenToLog || errorWasTruncated) && loggingSuccess && !canceled)
             {
                 // If the pip succeeded, we must check if one of the non-error output modes have been chosen
                 if ((m_sandboxConfig.OutputReportingMode == OutputReportingMode.FullOutputAlways) ||
@@ -1489,6 +1509,8 @@ namespace BuildXL.Processes
                     }
                 }
             }
+
+            Tracing.Logger.Log.LogSubPhaseDuration(m_loggingContext, m_pip, SandboxedProcessCounters.SandboxedPipExecutorPhaseLoggingOutputs, DateTime.UtcNow.Subtract(start));
 
             // N.B. here 'observed' means 'all', not observed in the terminology of SandboxedProcessPipExecutor.
             List<ReportedFileAccess> allFileAccesses = null;
@@ -3648,9 +3670,10 @@ namespace BuildXL.Processes
             return rootDirectory.IsValid ? rootDirectory.Combine(pathTable, pip.FormattedSemiStableHash).ToString(pathTable) : null;
         }
 
-        private static void FormatOutputAndPaths(string standardOut, string standardError,
+        private void FormatOutputAndPaths(string standardOut, string standardError,
             string standardOutPath, string standardErrorPath,
-            out string outputToLog, out string pathsToLog)
+            out string outputToLog, out string pathsToLog,
+            bool errorWasTruncated)
         {
             // Only display error/out if it is non-empty. This avoids adding duplicated newlines in the message.
             // Also use the emptiness as a hit for whether to show the path to the file on disk
@@ -3660,7 +3683,9 @@ namespace BuildXL.Processes
             outputToLog = (standardOutEmpty ? string.Empty : standardOut) +
                 (!standardOutEmpty && !standardErrorEmpty ? Environment.NewLine : string.Empty) +
                 (standardErrorEmpty ? string.Empty : standardError);
-            pathsToLog = (standardOutEmpty ? string.Empty : standardOutPath) +
+            pathsToLog = !errorWasTruncated
+                ? string.Empty 
+                : (standardOutEmpty ? string.Empty : standardOutPath) + 
                 (!standardOutEmpty && !standardErrorEmpty ? Environment.NewLine : string.Empty) +
                 (standardErrorEmpty ? string.Empty : standardErrorPath);
         }
@@ -3717,8 +3742,11 @@ namespace BuildXL.Processes
                     standardOutput = await TryFilterLineByLineAsync(result.StandardOutput, s => true, appendNewLine: true);
                 }
 
-                if (standardError.Length != result.StandardError.Length ||
-                    standardOutput.Length != result.StandardOutput.Length)
+                // Ignore empty lines
+                var standardErrorInResult = await result.StandardError.ReadValueAsync();
+                var standardOutputInResult = await result.StandardOutput.ReadValueAsync();
+                if (standardError.Replace(Environment.NewLine, string.Empty).Trim().Length != standardErrorInResult.Replace(Environment.NewLine, string.Empty).Trim().Length ||
+                    standardOutput.Replace(Environment.NewLine, string.Empty).Trim().Length != standardOutputInResult.Replace(Environment.NewLine, string.Empty).Trim().Length)
                 {
                     errorWasTruncated = true;
                 }
@@ -3726,7 +3754,7 @@ namespace BuildXL.Processes
                 HandleErrorsFromTool(standardError);
                 HandleErrorsFromTool(standardOutput);
 
-                LogPipProcessError(result, exitedWithSuccessExitCode, standardError, standardOutput);
+                LogPipProcessError(result, exitedWithSuccessExitCode, standardError, standardOutput, errorWasTruncated);
 
                 return new LogErrorResult(success: true, errorWasTruncated: errorWasTruncated);
             }
@@ -3792,12 +3820,16 @@ namespace BuildXL.Processes
                             HandleErrorsFromTool(stdError);
                             HandleErrorsFromTool(stdOut);
 
-                            LogPipProcessError(result, exitedWithSuccessExitCode, stdError, stdOut);
-                        }
+                            // For the last iteration, check if error was truncated
+                            if (errorReader.Peek() == -1 && outReader.Peek() == -1)
+                            {
+                                if (stdOutTotalLength != result.StandardOutput.Length || stdErrTotalLength != result.StandardError.Length)
+                                {
+                                    errorWasTruncated = true;
+                                }
+                            }
 
-                        if (stdOutTotalLength != result.StandardOutput.Length || stdErrTotalLength != result.StandardError.Length)
-                        {
-                            errorWasTruncated = true;
+                            LogPipProcessError(result, exitedWithSuccessExitCode, stdError, stdOut, errorWasTruncated);
                         }
 
                         return true;
@@ -3806,7 +3838,7 @@ namespace BuildXL.Processes
             }
         }
 
-        private void LogPipProcessError(SandboxedProcessResult result, bool exitedWithSuccessExitCode, string stdError, string stdOut)
+        private void LogPipProcessError(SandboxedProcessResult result, bool exitedWithSuccessExitCode, string stdError, string stdOut, bool errorWasTruncated)
         {
             string outputTolog;
             string outputPathsToLog;
@@ -3816,7 +3848,8 @@ namespace BuildXL.Processes
                 result.StandardOutput.FileName,
                 result.StandardError.FileName,
                 out outputTolog,
-                out outputPathsToLog);
+                out outputPathsToLog,
+                errorWasTruncated);
 
             Tracing.Logger.Log.PipProcessError(
                 m_loggingContext,
@@ -4000,13 +4033,24 @@ namespace BuildXL.Processes
                 return false;
             }
 
-            FormatOutputAndPaths(
+            bool warningWasTruncated = false;           
+            // Ignore empty lines
+            var standardErrorInResult = await standardError.ReadValueAsync();
+            var standardOutputInResult = await standardOutput.ReadValueAsync();
+            if (warningsError.Replace(Environment.NewLine, string.Empty).Trim().Length != standardErrorInResult.Replace(Environment.NewLine, string.Empty).Trim().Length ||
+                warningsOutput.Replace(Environment.NewLine, string.Empty).Trim().Length != standardOutputInResult.Replace(Environment.NewLine, string.Empty).Trim().Length)
+            {
+                warningWasTruncated = true;
+            }
+
+                FormatOutputAndPaths(
                 warningsOutput,
                 warningsError,
                 standardOutput.FileName,
                 standardError.FileName,
                 out string outputTolog,
-                out string outputPathsToLog);
+                out string outputPathsToLog,
+                warningWasTruncated);
 
             Tracing.Logger.Log.PipProcessWarning(
                 m_loggingContext,
