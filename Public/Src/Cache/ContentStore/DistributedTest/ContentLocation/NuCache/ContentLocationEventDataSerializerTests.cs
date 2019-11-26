@@ -13,6 +13,8 @@ using ContentStoreTest.Test;
 using FluentAssertions;
 using Xunit;
 using Xunit.Abstractions;
+using Microsoft.WindowsAzure.Storage.File;
+using BuildXL.Cache.MemoizationStore.Interfaces.Sessions;
 
 namespace ContentStoreTest.Distributed.ContentLocation.NuCache
 {
@@ -85,6 +87,29 @@ namespace ContentStoreTest.Distributed.ContentLocation.NuCache
             serializedMessages.Count.Should().Be(1); // All the cases we have should fit into one message.
         }
 
+        [Theory]
+        [InlineData(100)]
+        public void MetadataSerializationRoundtrip(int numberOfItems)
+        {
+            var touchTime = DateTime.UtcNow;
+
+            var serializer = CreateContentLocationEventDataSerializer();
+            var messages = Enumerable
+                .Range(1, numberOfItems)
+                .Select(n => {
+                    var strongFingerprint = StrongFingerprint.Random();
+                    var metadataEntry = new MetadataEntry(
+                        new ContentHashListWithDeterminism(ContentHashList.Random(), CacheDeterminism.None),
+                        touchTime.ToFileTimeUtc());
+                    return new UpdateMetadataEntryEventData(new MachineId(n), strongFingerprint, metadataEntry);
+                })
+                .ToArray();
+
+            // Round trip validation is performed by the serializer
+            var serializedMessages = serializer.Serialize(OperationContext(), messages).ToList();
+            serializedMessages.Count.Should().Be(1); // All the cases we have should fit into one message.
+        }
+
         private static ContentLocationEventData GenerateRandomEventData(int index, int numberOfHashes, DateTime touchTime)
         {
             var random = new Random(index);
@@ -93,7 +118,7 @@ namespace ContentStoreTest.Distributed.ContentLocation.NuCache
             {
                 0 => (ContentLocationEventData)new AddContentLocationEventData(new MachineId(index), hashesAndSizes.SelectArray(n => n.hash), hashesAndSizes.SelectArray(n => n.size)),
                 1 => new TouchContentLocationEventData(new MachineId(index), hashesAndSizes.SelectArray(n => n.hash), touchTime),
-                _ => new RemoveContentLocationEventData(new MachineId(index), hashesAndSizes.SelectArray(n => n.hash)),
+                2 => new RemoveContentLocationEventData(new MachineId(index), hashesAndSizes.SelectArray(n => n.hash)),
             };
         }
 
